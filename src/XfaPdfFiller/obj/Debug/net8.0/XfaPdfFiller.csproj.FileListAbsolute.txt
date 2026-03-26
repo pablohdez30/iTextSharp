@@ -1,0 +1,11 @@
+/home/user/iTextSharp/src/XfaPdfFiller/bin/Debug/net8.0/XfaPdfFiller.deps.json
+/home/user/iTextSharp/src/XfaPdfFiller/bin/Debug/net8.0/XfaPdfFiller.dll
+/home/user/iTextSharp/src/XfaPdfFiller/bin/Debug/net8.0/XfaPdfFiller.pdb
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/XfaPdfFiller.GeneratedMSBuildEditorConfig.editorconfig
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/XfaPdfFiller.AssemblyInfoInputs.cache
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/XfaPdfFiller.AssemblyInfo.cs
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/XfaPdfFiller.csproj.CoreCompileInputs.cache
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/XfaPdfFiller.dll
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/refint/XfaPdfFiller.dll
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/XfaPdfFiller.pdb
+/home/user/iTextSharp/src/XfaPdfFiller/obj/Debug/net8.0/ref/XfaPdfFiller.dll
