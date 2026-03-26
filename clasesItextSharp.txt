@@ -1,0 +1,4521 @@
+#region ensamblado itextsharp, Version=5.5.8.0, Culture=neutral, PublicKeyToken=8354ae6d2174ddca
+// C:\Principal\Codigo\SlnAries\DLL\itextsharp\5.5.8.0\itextsharp.dll
+// Decompiled with ICSharpCode.Decompiler 8.1.1.7464
+#endregion
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using iTextSharp.text.error_messages;
+using iTextSharp.text.pdf.collection;
+using iTextSharp.text.pdf.interfaces;
+using iTextSharp.text.pdf.security;
+using iTextSharp.text.xml.xmp;
+using Org.BouncyCastle.X509;
+
+namespace iTextSharp.text.pdf;
+
+public class PdfStamper : IPdfViewerPreferences, IPdfEncryptionSettings, IDisposable
+{
+    protected PdfStamperImp stamper;
+
+    private IDictionary<string, string> moreInfo;
+
+    protected internal bool hasSignature;
+
+    protected PdfSignatureAppearance sigApp;
+
+    protected XmlSignatureAppearance sigXmlApp;
+
+    private LtvVerification verification;
+
+    public virtual IDictionary<string, string> MoreInfo
+    {
+        get
+        {
+            return moreInfo;
+        }
+        set
+        {
+            moreInfo = value;
+        }
+    }
+
+    public virtual PdfSignatureAppearance SignatureAppearance => sigApp;
+
+    public virtual XmlSignatureAppearance XmlSignatureAppearance => sigXmlApp;
+
+    public virtual bool RotateContents
+    {
+        get
+        {
+            return stamper.RotateContents;
+        }
+        set
+        {
+            stamper.RotateContents = value;
+        }
+    }
+
+    public virtual PdfWriter Writer => stamper;
+
+    public virtual PdfReader Reader => stamper.reader;
+
+    public virtual AcroFields AcroFields => stamper.GetAcroFields();
+
+    public virtual bool FormFlattening
+    {
+        set
+        {
+            stamper.FormFlattening = value;
+        }
+    }
+
+    public virtual bool FreeTextFlattening
+    {
+        set
+        {
+            stamper.FreeTextFlattening = value;
+        }
+    }
+
+    public virtual bool AnnotationFlattening
+    {
+        set
+        {
+            stamper.FlatAnnotations = value;
+        }
+    }
+
+    public virtual IList<Dictionary<string, object>> Outlines
+    {
+        set
+        {
+            stamper.Outlines = value;
+        }
+    }
+
+    public virtual string JavaScript
+    {
+        set
+        {
+            stamper.AddJavaScript(value, !PdfEncodings.IsPdfDocEncoding(value));
+        }
+    }
+
+    public virtual int ViewerPreferences
+    {
+        set
+        {
+            stamper.ViewerPreferences = value;
+        }
+    }
+
+    public virtual byte[] XmpMetadata
+    {
+        set
+        {
+            stamper.XmpMetadata = value;
+        }
+    }
+
+    public virtual XmpWriter XmpWriter => stamper.XmpWriter;
+
+    public virtual bool FullCompression => stamper.FullCompression;
+
+    public virtual LtvVerification LtvVerification
+    {
+        get
+        {
+            if (verification == null)
+            {
+                verification = new LtvVerification(this);
+            }
+
+            return verification;
+        }
+    }
+
+    public PdfStamper(PdfReader reader, Stream os)
+    {
+        stamper = new PdfStamperImp(reader, os, '\0', append: false);
+    }
+
+    public PdfStamper(PdfReader reader, Stream os, char pdfVersion)
+    {
+        stamper = new PdfStamperImp(reader, os, pdfVersion, append: false);
+    }
+
+    public PdfStamper(PdfReader reader, Stream os, char pdfVersion, bool append)
+    {
+        stamper = new PdfStamperImp(reader, os, pdfVersion, append);
+    }
+
+    protected PdfStamper()
+    {
+    }
+
+    public virtual void ReplacePage(PdfReader r, int pageImported, int pageReplaced)
+    {
+        stamper.ReplacePage(r, pageImported, pageReplaced);
+    }
+
+    public virtual void InsertPage(int pageNumber, Rectangle mediabox)
+    {
+        stamper.InsertPage(pageNumber, mediabox);
+    }
+
+    public virtual void Close()
+    {
+        if (!stamper.closed)
+        {
+            if (hasSignature)
+            {
+                throw new DocumentException("Signature defined. Must be closed in PdfSignatureAppearance.");
+            }
+
+            MergeVerification();
+            stamper.Close(moreInfo);
+        }
+    }
+
+    public virtual PdfContentByte GetUnderContent(int pageNum)
+    {
+        return stamper.GetUnderContent(pageNum);
+    }
+
+    public virtual PdfContentByte GetOverContent(int pageNum)
+    {
+        return stamper.GetOverContent(pageNum);
+    }
+
+    public virtual void SetEncryption(byte[] userPassword, byte[] ownerPassword, int permissions, bool strength128Bits)
+    {
+        if (stamper.append)
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("append.mode.does.not.support.changing.the.encryption.status"));
+        }
+
+        if (stamper.ContentWritten)
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("content.was.already.written.to.the.output"));
+        }
+
+        stamper.SetEncryption(userPassword, ownerPassword, permissions, strength128Bits ? 1 : 0);
+    }
+
+    public virtual void SetEncryption(byte[] userPassword, byte[] ownerPassword, int permissions, int encryptionType)
+    {
+        if (stamper.IsAppend())
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("append.mode.does.not.support.changing.the.encryption.status"));
+        }
+
+        if (stamper.ContentWritten)
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("content.was.already.written.to.the.output"));
+        }
+
+        stamper.SetEncryption(userPassword, ownerPassword, permissions, encryptionType);
+    }
+
+    public virtual void SetEncryption(bool strength, string userPassword, string ownerPassword, int permissions)
+    {
+        SetEncryption(DocWriter.GetISOBytes(userPassword), DocWriter.GetISOBytes(ownerPassword), permissions, strength);
+    }
+
+    public virtual void SetEncryption(int encryptionType, string userPassword, string ownerPassword, int permissions)
+    {
+        SetEncryption(DocWriter.GetISOBytes(userPassword), DocWriter.GetISOBytes(ownerPassword), permissions, encryptionType);
+    }
+
+    public virtual void SetEncryption(X509Certificate[] certs, int[] permissions, int encryptionType)
+    {
+        if (stamper.IsAppend())
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("append.mode.does.not.support.changing.the.encryption.status"));
+        }
+
+        if (stamper.ContentWritten)
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("content.was.already.written.to.the.output"));
+        }
+
+        stamper.SetEncryption(certs, permissions, encryptionType);
+    }
+
+    public virtual PdfImportedPage GetImportedPage(PdfReader reader, int pageNumber)
+    {
+        return stamper.GetImportedPage(reader, pageNumber);
+    }
+
+    public virtual void AddAnnotation(PdfAnnotation annot, int page)
+    {
+        stamper.AddAnnotation(annot, page);
+    }
+
+    public virtual PdfFormField AddSignature(string name, int page, float llx, float lly, float urx, float ury)
+    {
+        PdfAcroForm acroForm = stamper.AcroForm;
+        PdfFormField pdfFormField = PdfFormField.CreateSignature(stamper);
+        acroForm.SetSignatureParams(pdfFormField, name, llx, lly, urx, ury);
+        acroForm.DrawSignatureAppearences(pdfFormField, llx, lly, urx, ury);
+        AddAnnotation(pdfFormField, page);
+        return pdfFormField;
+    }
+
+    public virtual void AddComments(FdfReader fdf)
+    {
+        stamper.AddComments(fdf);
+    }
+
+    public virtual void SetThumbnail(Image image, int page)
+    {
+        stamper.SetThumbnail(image, page);
+    }
+
+    public virtual bool PartialFormFlattening(string name)
+    {
+        return stamper.PartialFormFlattening(name);
+    }
+
+    public virtual void AddJavaScript(string name, string js)
+    {
+        stamper.AddJavaScript(name, PdfAction.JavaScript(js, stamper, !PdfEncodings.IsPdfDocEncoding(js)));
+    }
+
+    public virtual void AddFileAttachment(string description, byte[] fileStore, string file, string fileDisplay)
+    {
+        AddFileAttachment(description, PdfFileSpecification.FileEmbedded(stamper, file, fileDisplay, fileStore));
+    }
+
+    public virtual void AddFileAttachment(string description, PdfFileSpecification fs)
+    {
+        stamper.AddFileAttachment(description, fs);
+    }
+
+    public virtual void MakePackage(PdfName initialView)
+    {
+        PdfCollection pdfCollection = new PdfCollection(0);
+        pdfCollection.Put(PdfName.VIEW, initialView);
+        stamper.MakePackage(pdfCollection);
+    }
+
+    public virtual void MakePackage(PdfCollection collection)
+    {
+        stamper.MakePackage(collection);
+    }
+
+    public virtual void AddViewerPreference(PdfName key, PdfObject value)
+    {
+        stamper.AddViewerPreference(key, value);
+    }
+
+    public virtual void CreateXmpMetadata()
+    {
+        stamper.CreateXmpMetadata();
+    }
+
+    public virtual void SetFullCompression()
+    {
+        if (!stamper.append)
+        {
+            stamper.fullCompression = true;
+            stamper.SetAtLeastPdfVersion('5');
+        }
+    }
+
+    public virtual void SetPageAction(PdfName actionType, PdfAction action, int page)
+    {
+        stamper.SetPageAction(actionType, action, page);
+    }
+
+    public virtual void SetDuration(int seconds, int page)
+    {
+        stamper.SetDuration(seconds, page);
+    }
+
+    public virtual void SetTransition(PdfTransition transition, int page)
+    {
+        stamper.SetTransition(transition, page);
+    }
+
+    public static PdfStamper CreateSignature(PdfReader reader, Stream os, char pdfVersion, string tempFile, bool append)
+    {
+        PdfStamper pdfStamper;
+        if (tempFile == null)
+        {
+            ByteBuffer byteBuffer = new ByteBuffer();
+            pdfStamper = new PdfStamper(reader, byteBuffer, pdfVersion, append);
+            pdfStamper.sigApp = new PdfSignatureAppearance(pdfStamper.stamper);
+            pdfStamper.sigApp.Sigout = byteBuffer;
+        }
+        else
+        {
+            if (Directory.Exists(tempFile))
+            {
+                tempFile = Path.GetTempFileName();
+            }
+
+            FileStream os2 = new FileStream(tempFile, FileMode.Create, FileAccess.Write);
+            pdfStamper = new PdfStamper(reader, os2, pdfVersion, append);
+            pdfStamper.sigApp = new PdfSignatureAppearance(pdfStamper.stamper);
+            pdfStamper.sigApp.SetTempFile(tempFile);
+        }
+
+        pdfStamper.sigApp.Originalout = os;
+        pdfStamper.sigApp.SetStamper(pdfStamper);
+        pdfStamper.hasSignature = true;
+        PdfDictionary catalog = reader.Catalog;
+        PdfDictionary pdfDictionary = (PdfDictionary)PdfReader.GetPdfObject(catalog.Get(PdfName.ACROFORM), catalog);
+        if (pdfDictionary != null)
+        {
+            pdfDictionary.Remove(PdfName.NEEDAPPEARANCES);
+            pdfStamper.stamper.MarkUsed(pdfDictionary);
+        }
+
+        return pdfStamper;
+    }
+
+    public static PdfStamper CreateSignature(PdfReader reader, Stream os, char pdfVersion)
+    {
+        return CreateSignature(reader, os, pdfVersion, null, append: false);
+    }
+
+    public static PdfStamper CreateSignature(PdfReader reader, Stream os, char pdfVersion, string tempFile)
+    {
+        return CreateSignature(reader, os, pdfVersion, tempFile, append: false);
+    }
+
+    public static PdfStamper createXmlSignature(PdfReader reader, Stream os)
+    {
+        PdfStamper pdfStamper = new PdfStamper(reader, os);
+        pdfStamper.sigXmlApp = new XmlSignatureAppearance(pdfStamper.stamper);
+        pdfStamper.sigXmlApp.SetStamper(pdfStamper);
+        return pdfStamper;
+    }
+
+    public virtual Dictionary<string, PdfLayer> GetPdfLayers()
+    {
+        return stamper.GetPdfLayers();
+    }
+
+    public virtual void Dispose()
+    {
+        Close();
+    }
+
+    public virtual void MarkUsed(PdfObject obj)
+    {
+        stamper.MarkUsed(obj);
+    }
+
+    internal void MergeVerification()
+    {
+        if (verification != null)
+        {
+            verification.Merge();
+        }
+    }
+}
+#if false // Registro de descompilación
+"27" elementos en caché
+------------------
+Resolver: "mscorlib, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll"
+------------------
+Resolver: "System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll"
+------------------
+Resolver: "System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+No se pudo encontrar por el nombre "System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+------------------
+Resolver: "System.Xml, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xml.dll"
+------------------
+Resolver: "System.Security, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+No se pudo encontrar por el nombre "System.Security, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+------------------
+Resolver: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll"
+#endif
+
+
+
+
+------------------------------------------------------
+#region ensamblado itextsharp, Version=5.5.8.0, Culture=neutral, PublicKeyToken=8354ae6d2174ddca
+// C:\Principal\Codigo\SlnAries\DLL\itextsharp\5.5.8.0\itextsharp.dll
+// Decompiled with ICSharpCode.Decompiler 8.1.1.7464
+#endregion
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Xml;
+using iTextSharp.text.xml;
+
+namespace iTextSharp.text.pdf;
+
+public class XfaForm
+{
+    public class InverseStore
+    {
+        protected internal List<string> part = new List<string>();
+
+        protected internal List<object> follow = new List<object>();
+
+        public virtual string DefaultName
+        {
+            get
+            {
+                InverseStore inverseStore = this;
+                object obj;
+                while (true)
+                {
+                    obj = inverseStore.follow[0];
+                    if (obj is string)
+                    {
+                        break;
+                    }
+
+                    inverseStore = (InverseStore)obj;
+                }
+
+                return (string)obj;
+            }
+        }
+
+        public virtual bool IsSimilar(string name)
+        {
+            int num = name.IndexOf('[');
+            name = name.Substring(0, num + 1);
+            foreach (string item in part)
+            {
+                if (item.StartsWith(name))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    public class Stack2<T> : List<T>
+    {
+        public virtual T Peek()
+        {
+            if (base.Count == 0)
+            {
+                throw new InvalidOperationException();
+            }
+
+            return base[base.Count - 1];
+        }
+
+        public virtual T Pop()
+        {
+            if (base.Count == 0)
+            {
+                throw new InvalidOperationException();
+            }
+
+            T result = base[base.Count - 1];
+            RemoveAt(base.Count - 1);
+            return result;
+        }
+
+        public virtual T Push(T item)
+        {
+            Add(item);
+            return item;
+        }
+
+        public virtual bool Empty()
+        {
+            return base.Count == 0;
+        }
+    }
+
+    public class Xml2Som
+    {
+        protected List<string> order;
+
+        protected Dictionary<string, XmlNode> name2Node;
+
+        protected Dictionary<string, InverseStore> inverseSearch;
+
+        protected Stack2<string> stack;
+
+        protected int anform;
+
+        public virtual List<string> Order
+        {
+            get
+            {
+                return order;
+            }
+            set
+            {
+                order = value;
+            }
+        }
+
+        public virtual Dictionary<string, XmlNode> Name2Node
+        {
+            get
+            {
+                return name2Node;
+            }
+            set
+            {
+                name2Node = value;
+            }
+        }
+
+        public virtual Dictionary<string, InverseStore> InverseSearch
+        {
+            get
+            {
+                return inverseSearch;
+            }
+            set
+            {
+                inverseSearch = value;
+            }
+        }
+
+        public static string EscapeSom(string s)
+        {
+            if (s == null)
+            {
+                return "";
+            }
+
+            int num = s.IndexOf('.');
+            if (num < 0)
+            {
+                return s;
+            }
+
+            StringBuilder stringBuilder = new StringBuilder();
+            int num2 = 0;
+            while (num >= 0)
+            {
+                stringBuilder.Append(s.Substring(num2, num - num2));
+                stringBuilder.Append('\\');
+                num2 = num;
+                num = s.IndexOf('.', num + 1);
+            }
+
+            stringBuilder.Append(s.Substring(num2));
+            return stringBuilder.ToString();
+        }
+
+        public static string UnescapeSom(string s)
+        {
+            int num = s.IndexOf('\\');
+            if (num < 0)
+            {
+                return s;
+            }
+
+            StringBuilder stringBuilder = new StringBuilder();
+            int num2 = 0;
+            while (num >= 0)
+            {
+                stringBuilder.Append(s.Substring(num2, num - num2));
+                num2 = num + 1;
+                num = s.IndexOf('\\', num + 1);
+            }
+
+            stringBuilder.Append(s.Substring(num2));
+            return stringBuilder.ToString();
+        }
+
+        protected virtual string PrintStack()
+        {
+            if (stack.Empty())
+            {
+                return "";
+            }
+
+            StringBuilder stringBuilder = new StringBuilder();
+            foreach (string item in stack)
+            {
+                stringBuilder.Append('.').Append(item);
+            }
+
+            return stringBuilder.ToString(1, stringBuilder.Length - 1);
+        }
+
+        public static string GetShortName(string s)
+        {
+            int num = s.IndexOf(".#subform[");
+            if (num < 0)
+            {
+                return s;
+            }
+
+            int num2 = 0;
+            StringBuilder stringBuilder = new StringBuilder();
+            while (num >= 0)
+            {
+                stringBuilder.Append(s.Substring(num2, num - num2));
+                num = s.IndexOf("]", num + 10);
+                if (num < 0)
+                {
+                    return stringBuilder.ToString();
+                }
+
+                num2 = num + 1;
+                num = s.IndexOf(".#subform[", num2);
+            }
+
+            stringBuilder.Append(s.Substring(num2));
+            return stringBuilder.ToString();
+        }
+
+        public virtual void InverseSearchAdd(string unstack)
+        {
+            InverseSearchAdd(inverseSearch, stack, unstack);
+        }
+
+        public static void InverseSearchAdd(Dictionary<string, InverseStore> inverseSearch, Stack2<string> stack, string unstack)
+        {
+            string key = stack.Peek();
+            inverseSearch.TryGetValue(key, out var value);
+            if (value == null)
+            {
+                value = (inverseSearch[key] = new InverseStore());
+            }
+
+            for (int num = stack.Count - 2; num >= 0; num--)
+            {
+                key = stack[num];
+                int num2 = value.part.IndexOf(key);
+                InverseStore inverseStore2;
+                if (num2 < 0)
+                {
+                    value.part.Add(key);
+                    inverseStore2 = new InverseStore();
+                    value.follow.Add(inverseStore2);
+                }
+                else
+                {
+                    inverseStore2 = (InverseStore)value.follow[num2];
+                }
+
+                value = inverseStore2;
+            }
+
+            value.part.Add("");
+            value.follow.Add(unstack);
+        }
+
+        public virtual string InverseSearchGlobal(List<string> parts)
+        {
+            if (parts.Count == 0)
+            {
+                return null;
+            }
+
+            inverseSearch.TryGetValue(parts[parts.Count - 1], out var value);
+            if (value == null)
+            {
+                return null;
+            }
+
+            for (int num = parts.Count - 2; num >= 0; num--)
+            {
+                string text = parts[num];
+                int num2 = value.part.IndexOf(text);
+                if (num2 < 0)
+                {
+                    if (value.IsSimilar(text))
+                    {
+                        return null;
+                    }
+
+                    return value.DefaultName;
+                }
+
+                value = (InverseStore)value.follow[num2];
+            }
+
+            return value.DefaultName;
+        }
+
+        public static Stack2<string> SplitParts(string name)
+        {
+            while (name.StartsWith("."))
+            {
+                name = name.Substring(1);
+            }
+
+            Stack2<string> stack = new Stack2<string>();
+            int num = 0;
+            int num2 = 0;
+            string text;
+            while (true)
+            {
+                num2 = num;
+                while (true)
+                {
+                    num2 = name.IndexOf('.', num2);
+                    if (num2 < 0 || name[num2 - 1] != '\\')
+                    {
+                        break;
+                    }
+
+                    num2++;
+                }
+
+                if (num2 < 0)
+                {
+                    break;
+                }
+
+                text = name.Substring(num, num2 - num);
+                if (!text.EndsWith("]"))
+                {
+                    text += "[0]";
+                }
+
+                stack.Add(text);
+                num = num2 + 1;
+            }
+
+            text = name.Substring(num);
+            if (!text.EndsWith("]"))
+            {
+                text += "[0]";
+            }
+
+            stack.Add(text);
+            return stack;
+        }
+    }
+
+    public class Xml2SomDatasets : Xml2Som
+    {
+        public Xml2SomDatasets(XmlNode n)
+        {
+            order = new List<string>();
+            name2Node = new Dictionary<string, XmlNode>();
+            stack = new Stack2<string>();
+            anform = 0;
+            inverseSearch = new Dictionary<string, InverseStore>();
+            ProcessDatasetsInternal(n);
+        }
+
+        public virtual XmlNode InsertNode(XmlNode n, string shortName)
+        {
+            Stack2<string> stack = Xml2Som.SplitParts(shortName);
+            XmlDocument ownerDocument = n.OwnerDocument;
+            XmlNode xmlNode = null;
+            n = n.FirstChild;
+            while (n.NodeType != XmlNodeType.Element)
+            {
+                n = n.NextSibling;
+            }
+
+            for (int i = 0; i < stack.Count; i++)
+            {
+                string text = stack[i];
+                int num = text.LastIndexOf('[');
+                string text2 = text.Substring(0, num);
+                num = int.Parse(text.Substring(num + 1, text.Length - num - 2));
+                int j = -1;
+                for (xmlNode = n.FirstChild; xmlNode != null; xmlNode = xmlNode.NextSibling)
+                {
+                    if (xmlNode.NodeType == XmlNodeType.Element)
+                    {
+                        string text3 = Xml2Som.EscapeSom(xmlNode.LocalName);
+                        if (text3.Equals(text2))
+                        {
+                            j++;
+                            if (j == num)
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                for (; j < num; j++)
+                {
+                    xmlNode = ownerDocument.CreateElement(text2);
+                    xmlNode = n.AppendChild(xmlNode);
+                    XmlNode xmlNode2 = ownerDocument.CreateNode(XmlNodeType.Attribute, "dataNode", "http://www.xfa.org/schema/xfa-data/1.0/");
+                    xmlNode2.Value = "dataGroup";
+                    xmlNode.Attributes.SetNamedItem(xmlNode2);
+                }
+
+                n = xmlNode;
+            }
+
+            Xml2Som.InverseSearchAdd(inverseSearch, stack, shortName);
+            name2Node[shortName] = xmlNode;
+            order.Add(shortName);
+            return xmlNode;
+        }
+
+        private static bool HasChildren(XmlNode n)
+        {
+            XmlNode namedItem = n.Attributes.GetNamedItem("dataNode", "http://www.xfa.org/schema/xfa-data/1.0/");
+            if (namedItem != null)
+            {
+                string value = namedItem.Value;
+                if ("dataGroup".Equals(value))
+                {
+                    return true;
+                }
+
+                if ("dataValue".Equals(value))
+                {
+                    return false;
+                }
+            }
+
+            if (!n.HasChildNodes)
+            {
+                return false;
+            }
+
+            for (XmlNode xmlNode = n.FirstChild; xmlNode != null; xmlNode = xmlNode.NextSibling)
+            {
+                if (xmlNode.NodeType == XmlNodeType.Element)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ProcessDatasetsInternal(XmlNode n)
+        {
+            if (n == null)
+            {
+                return;
+            }
+
+            Dictionary<string, int> dictionary = new Dictionary<string, int>();
+            for (XmlNode xmlNode = n.FirstChild; xmlNode != null; xmlNode = xmlNode.NextSibling)
+            {
+                if (xmlNode.NodeType == XmlNodeType.Element)
+                {
+                    string text = Xml2Som.EscapeSom(xmlNode.LocalName);
+                    int num2 = (dictionary[text] = (dictionary.ContainsKey(text) ? (dictionary[text] + 1) : 0));
+                    if (HasChildren(xmlNode))
+                    {
+                        stack.Push(text + "[" + num2 + "]");
+                        ProcessDatasetsInternal(xmlNode);
+                        stack.Pop();
+                    }
+                    else
+                    {
+                        stack.Push(text + "[" + num2 + "]");
+                        string text2 = PrintStack();
+                        order.Add(text2);
+                        InverseSearchAdd(text2);
+                        name2Node[text2] = xmlNode;
+                        stack.Pop();
+                    }
+                }
+            }
+        }
+    }
+
+    public class AcroFieldsSearch : Xml2Som
+    {
+        private Dictionary<string, string> acroShort2LongName;
+
+        public virtual Dictionary<string, string> AcroShort2LongName
+        {
+            get
+            {
+                return acroShort2LongName;
+            }
+            set
+            {
+                acroShort2LongName = value;
+            }
+        }
+
+        public AcroFieldsSearch(ICollection<string> items)
+        {
+            inverseSearch = new Dictionary<string, InverseStore>();
+            acroShort2LongName = new Dictionary<string, string>();
+            foreach (string item in items)
+            {
+                string shortName = Xml2Som.GetShortName(item);
+                acroShort2LongName[shortName] = item;
+                Xml2Som.InverseSearchAdd(inverseSearch, Xml2Som.SplitParts(shortName), item);
+            }
+        }
+    }
+
+    public class Xml2SomTemplate : Xml2Som
+    {
+        private bool dynamicForm;
+
+        private int templateLevel;
+
+        public virtual bool DynamicForm
+        {
+            get
+            {
+                return dynamicForm;
+            }
+            set
+            {
+                dynamicForm = value;
+            }
+        }
+
+        public Xml2SomTemplate(XmlNode n)
+        {
+            order = new List<string>();
+            name2Node = new Dictionary<string, XmlNode>();
+            stack = new Stack2<string>();
+            anform = 0;
+            templateLevel = 0;
+            inverseSearch = new Dictionary<string, InverseStore>();
+            ProcessTemplate(n, null);
+        }
+
+        public virtual string GetFieldType(string s)
+        {
+            name2Node.TryGetValue(s, out var value);
+            if (value == null)
+            {
+                return null;
+            }
+
+            if ("exclGroup".Equals(value.LocalName))
+            {
+                return "exclGroup";
+            }
+
+            XmlNode xmlNode = value.FirstChild;
+            while (xmlNode != null && (xmlNode.NodeType != XmlNodeType.Element || !"ui".Equals(xmlNode.LocalName)))
+            {
+                xmlNode = xmlNode.NextSibling;
+            }
+
+            if (xmlNode == null)
+            {
+                return null;
+            }
+
+            for (XmlNode xmlNode2 = xmlNode.FirstChild; xmlNode2 != null; xmlNode2 = xmlNode2.NextSibling)
+            {
+                if (xmlNode2.NodeType == XmlNodeType.Element && (!"extras".Equals(xmlNode2.LocalName) || !"picture".Equals(xmlNode2.LocalName)))
+                {
+                    return xmlNode2.LocalName;
+                }
+            }
+
+            return null;
+        }
+
+        private void ProcessTemplate(XmlNode n, Dictionary<string, int> ff)
+        {
+            if (ff == null)
+            {
+                ff = new Dictionary<string, int>();
+            }
+
+            Dictionary<string, int> dictionary = new Dictionary<string, int>();
+            for (XmlNode xmlNode = n.FirstChild; xmlNode != null; xmlNode = xmlNode.NextSibling)
+            {
+                if (xmlNode.NodeType == XmlNodeType.Element)
+                {
+                    string localName = xmlNode.LocalName;
+                    if ("subform".Equals(localName))
+                    {
+                        XmlNode namedItem = xmlNode.Attributes.GetNamedItem("name");
+                        string text = "#subform";
+                        bool flag = true;
+                        if (namedItem != null)
+                        {
+                            text = Xml2Som.EscapeSom(namedItem.Value);
+                            flag = false;
+                        }
+
+                        int num2;
+                        if (!flag)
+                        {
+                            num2 = (dictionary[text] = (dictionary.ContainsKey(text) ? (dictionary[text] + 1) : 0));
+                        }
+                        else
+                        {
+                            num2 = anform;
+                            anform++;
+                        }
+
+                        stack.Push(text + "[" + num2 + "]");
+                        templateLevel++;
+                        if (flag)
+                        {
+                            ProcessTemplate(xmlNode, ff);
+                        }
+                        else
+                        {
+                            ProcessTemplate(xmlNode, null);
+                        }
+
+                        templateLevel--;
+                        stack.Pop();
+                    }
+                    else if ("field".Equals(localName) || "exclGroup".Equals(localName))
+                    {
+                        XmlNode namedItem2 = xmlNode.Attributes.GetNamedItem("name");
+                        if (namedItem2 != null)
+                        {
+                            string text2 = Xml2Som.EscapeSom(namedItem2.Value);
+                            int num4 = (ff[text2] = (ff.ContainsKey(text2) ? (ff[text2] + 1) : 0));
+                            stack.Push(text2 + "[" + num4 + "]");
+                            string text3 = PrintStack();
+                            order.Add(text3);
+                            InverseSearchAdd(text3);
+                            name2Node[text3] = xmlNode;
+                            stack.Pop();
+                        }
+                    }
+                    else if (!dynamicForm && templateLevel > 0 && "occur".Equals(localName))
+                    {
+                        int num5 = 1;
+                        int num6 = 1;
+                        int num7 = 1;
+                        XmlNode namedItem3 = xmlNode.Attributes.GetNamedItem("initial");
+                        if (namedItem3 != null)
+                        {
+                            try
+                            {
+                                num5 = int.Parse(namedItem3.Value.Trim());
+                            }
+                            catch
+                            {
+                            }
+                        }
+
+                        namedItem3 = xmlNode.Attributes.GetNamedItem("min");
+                        if (namedItem3 != null)
+                        {
+                            try
+                            {
+                                num6 = int.Parse(namedItem3.Value.Trim());
+                            }
+                            catch
+                            {
+                            }
+                        }
+
+                        namedItem3 = xmlNode.Attributes.GetNamedItem("max");
+                        if (namedItem3 != null)
+                        {
+                            try
+                            {
+                                num7 = int.Parse(namedItem3.Value.Trim());
+                            }
+                            catch
+                            {
+                            }
+                        }
+
+                        if (num5 != num6 || num6 != num7)
+                        {
+                            dynamicForm = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public const string XFA_DATA_SCHEMA = "http://www.xfa.org/schema/xfa-data/1.0/";
+
+    private Xml2SomTemplate templateSom;
+
+    private XmlNode templateNode;
+
+    private Xml2SomDatasets datasetsSom;
+
+    private AcroFieldsSearch acroFieldsSom;
+
+    private PdfReader reader;
+
+    private bool xfaPresent;
+
+    private XmlDocument domDocument;
+
+    private bool changed;
+
+    private XmlNode datasetsNode;
+
+    public virtual bool XfaPresent
+    {
+        get
+        {
+            return xfaPresent;
+        }
+        set
+        {
+            xfaPresent = value;
+        }
+    }
+
+    public virtual XmlDocument DomDocument
+    {
+        get
+        {
+            return domDocument;
+        }
+        set
+        {
+            domDocument = value;
+            ExtractNodes();
+        }
+    }
+
+    public virtual PdfReader Reader
+    {
+        get
+        {
+            return reader;
+        }
+        set
+        {
+            reader = value;
+        }
+    }
+
+    public virtual bool Changed
+    {
+        get
+        {
+            return changed;
+        }
+        set
+        {
+            changed = value;
+        }
+    }
+
+    public virtual Xml2SomTemplate TemplateSom
+    {
+        get
+        {
+            return templateSom;
+        }
+        set
+        {
+            templateSom = value;
+        }
+    }
+
+    public virtual Xml2SomDatasets DatasetsSom
+    {
+        get
+        {
+            return datasetsSom;
+        }
+        set
+        {
+            datasetsSom = value;
+        }
+    }
+
+    public virtual AcroFieldsSearch AcroFieldsSom
+    {
+        get
+        {
+            return acroFieldsSom;
+        }
+        set
+        {
+            acroFieldsSom = value;
+        }
+    }
+
+    public virtual XmlNode DatasetsNode => datasetsNode;
+
+    public XfaForm()
+    {
+    }
+
+    public static PdfObject GetXfaObject(PdfReader reader)
+    {
+        PdfDictionary pdfDictionary = (PdfDictionary)PdfReader.GetPdfObjectRelease(reader.Catalog.Get(PdfName.ACROFORM));
+        if (pdfDictionary == null)
+        {
+            return null;
+        }
+
+        return PdfReader.GetPdfObjectRelease(pdfDictionary.Get(PdfName.XFA));
+    }
+
+    public XfaForm(PdfReader reader)
+    {
+        this.reader = reader;
+        PdfObject xfaObject = GetXfaObject(reader);
+        if (xfaObject == null)
+        {
+            xfaPresent = false;
+            return;
+        }
+
+        xfaPresent = true;
+        MemoryStream memoryStream = new MemoryStream();
+        if (xfaObject.IsArray())
+        {
+            PdfArray pdfArray = (PdfArray)xfaObject;
+            for (int i = 1; i < pdfArray.Size; i += 2)
+            {
+                PdfObject directObject = pdfArray.GetDirectObject(i);
+                if (directObject is PRStream)
+                {
+                    byte[] streamBytes = PdfReader.GetStreamBytes((PRStream)directObject);
+                    memoryStream.Write(streamBytes, 0, streamBytes.Length);
+                }
+            }
+        }
+        else if (xfaObject is PRStream)
+        {
+            byte[] streamBytes2 = PdfReader.GetStreamBytes((PRStream)xfaObject);
+            memoryStream.Write(streamBytes2, 0, streamBytes2.Length);
+        }
+
+        memoryStream.Seek(0L, SeekOrigin.Begin);
+        XmlTextReader xmlTextReader = new XmlTextReader(memoryStream);
+        domDocument = new XmlDocument();
+        domDocument.PreserveWhitespace = true;
+        domDocument.Load(xmlTextReader);
+        ExtractNodes();
+    }
+
+    private void ExtractNodes()
+    {
+        Dictionary<string, XmlNode> dictionary = ExtractXFANodes(domDocument);
+        if (dictionary.ContainsKey("template"))
+        {
+            templateNode = dictionary["template"];
+            templateSom = new Xml2SomTemplate(templateNode);
+        }
+
+        if (dictionary.ContainsKey("datasets"))
+        {
+            datasetsNode = dictionary["datasets"];
+            datasetsSom = new Xml2SomDatasets(datasetsNode.FirstChild);
+        }
+
+        if (datasetsNode == null)
+        {
+            CreateDatasetsNode(domDocument.FirstChild);
+        }
+    }
+
+    public static Dictionary<string, XmlNode> ExtractXFANodes(XmlDocument domDocument)
+    {
+        Dictionary<string, XmlNode> dictionary = new Dictionary<string, XmlNode>();
+        XmlNode xmlNode = domDocument.FirstChild;
+        while (xmlNode.NodeType != XmlNodeType.Element || xmlNode.ChildNodes.Count == 0)
+        {
+            xmlNode = xmlNode.NextSibling;
+        }
+
+        for (xmlNode = xmlNode.FirstChild; xmlNode != null; xmlNode = xmlNode.NextSibling)
+        {
+            if (xmlNode.NodeType == XmlNodeType.Element)
+            {
+                string localName = xmlNode.LocalName;
+                dictionary[localName] = xmlNode;
+            }
+        }
+
+        return dictionary;
+    }
+
+    private void CreateDatasetsNode(XmlNode n)
+    {
+        while (n.ChildNodes.Count == 0)
+        {
+            n = n.NextSibling;
+        }
+
+        if (n != null)
+        {
+            XmlElement xmlElement = n.OwnerDocument.CreateElement("xfa", "datasets", "http://www.xfa.org/schema/xfa-data/1.0/");
+            xmlElement.SetAttribute("xmlns:xfa", "http://www.xfa.org/schema/xfa-data/1.0/");
+            datasetsNode = xmlElement;
+            n.AppendChild(datasetsNode);
+        }
+    }
+
+    public static void SetXfa(XfaForm form, PdfReader reader, PdfWriter writer)
+    {
+        PdfDictionary pdfDictionary = (PdfDictionary)PdfReader.GetPdfObjectRelease(reader.Catalog.Get(PdfName.ACROFORM));
+        if (pdfDictionary == null)
+        {
+            return;
+        }
+
+        PdfObject xfaObject = GetXfaObject(reader);
+        if (xfaObject.IsArray())
+        {
+            PdfArray pdfArray = (PdfArray)xfaObject;
+            int num = -1;
+            int num2 = -1;
+            for (int i = 0; i < pdfArray.Size; i += 2)
+            {
+                PdfString asString = pdfArray.GetAsString(i);
+                if ("template".Equals(asString.ToString()))
+                {
+                    num = i + 1;
+                }
+
+                if ("datasets".Equals(asString.ToString()))
+                {
+                    num2 = i + 1;
+                }
+            }
+
+            if (num > -1 && num2 > -1)
+            {
+                reader.KillXref(pdfArray.GetAsIndirectObject(num));
+                reader.KillXref(pdfArray.GetAsIndirectObject(num2));
+                PdfStream pdfStream = new PdfStream(SerializeDoc(form.templateNode));
+                pdfStream.FlateCompress(writer.CompressionLevel);
+                pdfArray[num] = writer.AddToBody(pdfStream).IndirectReference;
+                PdfStream pdfStream2 = new PdfStream(SerializeDoc(form.datasetsNode));
+                pdfStream2.FlateCompress(writer.CompressionLevel);
+                pdfArray[num2] = writer.AddToBody(pdfStream2).IndirectReference;
+                pdfDictionary.Put(PdfName.XFA, new PdfArray(pdfArray));
+                return;
+            }
+        }
+
+        reader.KillXref(pdfDictionary.Get(PdfName.XFA));
+        PdfStream pdfStream3 = new PdfStream(SerializeDoc(form.domDocument));
+        pdfStream3.FlateCompress(writer.CompressionLevel);
+        PdfIndirectReference indirectReference = writer.AddToBody(pdfStream3).IndirectReference;
+        pdfDictionary.Put(PdfName.XFA, indirectReference);
+    }
+
+    public virtual void SetXfa(PdfWriter writer)
+    {
+        SetXfa(this, reader, writer);
+    }
+
+    public static byte[] SerializeDoc(XmlNode n)
+    {
+        XmlDomWriter xmlDomWriter = new XmlDomWriter();
+        MemoryStream memoryStream = new MemoryStream();
+        xmlDomWriter.SetOutput(memoryStream, null);
+        xmlDomWriter.SetCanonical(canonical: false);
+        xmlDomWriter.Write(n);
+        memoryStream.Close();
+        return memoryStream.ToArray();
+    }
+
+    public virtual string FindFieldName(string name, AcroFields af)
+    {
+        IDictionary<string, AcroFields.Item> fields = af.Fields;
+        if (fields.ContainsKey(name))
+        {
+            return name;
+        }
+
+        if (acroFieldsSom == null)
+        {
+            if (fields.Count == 0 && xfaPresent)
+            {
+                acroFieldsSom = new AcroFieldsSearch(datasetsSom.Name2Node.Keys);
+            }
+            else
+            {
+                acroFieldsSom = new AcroFieldsSearch(fields.Keys);
+            }
+        }
+
+        if (acroFieldsSom.AcroShort2LongName.ContainsKey(name))
+        {
+            return acroFieldsSom.AcroShort2LongName[name];
+        }
+
+        return acroFieldsSom.InverseSearchGlobal(Xml2Som.SplitParts(name));
+    }
+
+    public virtual string FindDatasetsName(string name)
+    {
+        if (datasetsSom.Name2Node.ContainsKey(name))
+        {
+            return name;
+        }
+
+        return datasetsSom.InverseSearchGlobal(Xml2Som.SplitParts(name));
+    }
+
+    public virtual XmlNode FindDatasetsNode(string name)
+    {
+        if (name == null)
+        {
+            return null;
+        }
+
+        name = FindDatasetsName(name);
+        if (name == null)
+        {
+            return null;
+        }
+
+        return datasetsSom.Name2Node[name];
+    }
+
+    public static string GetNodeText(XmlNode n)
+    {
+        if (n == null)
+        {
+            return "";
+        }
+
+        return GetNodeText(n, "");
+    }
+
+    private static string GetNodeText(XmlNode n, string name)
+    {
+        for (XmlNode xmlNode = n.FirstChild; xmlNode != null; xmlNode = xmlNode.NextSibling)
+        {
+            if (xmlNode.NodeType == XmlNodeType.Element)
+            {
+                name = GetNodeText(xmlNode, name);
+            }
+            else if (xmlNode.NodeType == XmlNodeType.Text)
+            {
+                name += xmlNode.Value;
+            }
+        }
+
+        return name;
+    }
+
+    public virtual void SetNodeText(XmlNode n, string text)
+    {
+        if (n != null)
+        {
+            XmlNode xmlNode = null;
+            while ((xmlNode = n.FirstChild) != null)
+            {
+                n.RemoveChild(xmlNode);
+            }
+
+            n.Attributes.RemoveNamedItem("dataNode", "http://www.xfa.org/schema/xfa-data/1.0/");
+            n.AppendChild(domDocument.CreateTextNode(text));
+            changed = true;
+        }
+    }
+
+    public virtual void FillXfaForm(string file)
+    {
+        using FileStream stream = new FileStream(file, FileMode.Open);
+        FillXfaForm(stream, readOnly: false);
+    }
+
+    public virtual void FillXfaForm(Stream stream)
+    {
+        FillXfaForm(stream, readOnly: false);
+    }
+
+    public virtual void FillXfaForm(Stream stream, bool readOnly)
+    {
+        FillXfaForm(new XmlTextReader(stream), readOnly);
+    }
+
+    public virtual void FillXfaForm(XmlReader reader)
+    {
+        FillXfaForm(reader, readOnly: false);
+    }
+
+    public virtual void FillXfaForm(XmlReader reader, bool readOnly)
+    {
+        XmlDocument xmlDocument = new XmlDocument();
+        xmlDocument.PreserveWhitespace = true;
+        xmlDocument.Load(reader);
+        FillXfaForm(xmlDocument.DocumentElement);
+    }
+
+    public virtual void FillXfaForm(XmlNode node)
+    {
+        FillXfaForm(node, readOnly: false);
+    }
+
+    public virtual void FillXfaForm(XmlNode node, bool readOnly)
+    {
+        if (readOnly)
+        {
+            XmlNodeList elementsByTagName = domDocument.GetElementsByTagName("field");
+            for (int i = 0; i < elementsByTagName.Count; i++)
+            {
+                ((XmlElement)elementsByTagName.Item(i)).SetAttribute("access", "readOnly");
+            }
+        }
+
+        XmlNodeList childNodes = datasetsNode.ChildNodes;
+        XmlNode xmlNode = null;
+        foreach (XmlNode item in childNodes)
+        {
+            if (item.NodeType == XmlNodeType.Element && item.LocalName.Equals("data") && "http://www.xfa.org/schema/xfa-data/1.0/".Equals(item.NamespaceURI))
+            {
+                xmlNode = item;
+                break;
+            }
+        }
+
+        if (xmlNode == null)
+        {
+            xmlNode = datasetsNode.OwnerDocument.CreateElement("xfa:data", "http://www.xfa.org/schema/xfa-data/1.0/");
+            datasetsNode.AppendChild(xmlNode);
+        }
+
+        XmlNodeList childNodes2 = xmlNode.ChildNodes;
+        if (childNodes2.Count == 0)
+        {
+            xmlNode.AppendChild(domDocument.ImportNode(node, deep: true));
+        }
+        else
+        {
+            XmlNode firstElementNode = GetFirstElementNode(xmlNode);
+            if (firstElementNode != null)
+            {
+                xmlNode.ReplaceChild(domDocument.ImportNode(node, deep: true), firstElementNode);
+            }
+        }
+
+        ExtractNodes();
+        Changed = true;
+    }
+
+    private XmlNode GetFirstElementNode(XmlNode src)
+    {
+        XmlNode result = null;
+        XmlNodeList childNodes = src.ChildNodes;
+        for (int i = 0; i < childNodes.Count; i++)
+        {
+            if (childNodes[i].NodeType == XmlNodeType.Element)
+            {
+                result = childNodes[i];
+                break;
+            }
+        }
+
+        return result;
+    }
+}
+#if false // Registro de descompilación
+"27" elementos en caché
+------------------
+Resolver: "mscorlib, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll"
+------------------
+Resolver: "System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll"
+------------------
+Resolver: "System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+No se pudo encontrar por el nombre "System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+------------------
+Resolver: "System.Xml, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xml.dll"
+------------------
+Resolver: "System.Security, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+No se pudo encontrar por el nombre "System.Security, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+------------------
+Resolver: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll"
+#endif
+
+
+--------------------------------------------------------
+
+#region ensamblado itextsharp, Version=5.5.8.0, Culture=neutral, PublicKeyToken=8354ae6d2174ddca
+// C:\Principal\Codigo\SlnAries\DLL\itextsharp\5.5.8.0\itextsharp.dll
+// Decompiled with ICSharpCode.Decompiler 8.1.1.7464
+#endregion
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using System.util;
+using System.util.collections;
+using System.Xml;
+using iTextSharp.text.error_messages;
+using iTextSharp.text.io;
+using iTextSharp.text.pdf.security;
+using iTextSharp.text.xml;
+
+namespace iTextSharp.text.pdf;
+
+public class AcroFields
+{
+    public class Item
+    {
+        public const int WRITE_MERGED = 1;
+
+        public const int WRITE_WIDGET = 2;
+
+        public const int WRITE_VALUE = 4;
+
+        protected internal List<PdfDictionary> values = new List<PdfDictionary>();
+
+        protected internal List<PdfDictionary> widgets = new List<PdfDictionary>();
+
+        protected internal List<PdfIndirectReference> widget_refs = new List<PdfIndirectReference>();
+
+        protected internal List<PdfDictionary> merged = new List<PdfDictionary>();
+
+        protected internal List<int> page = new List<int>();
+
+        protected internal List<int> tabOrder = new List<int>();
+
+        public virtual int Size => values.Count;
+
+        public virtual void WriteToAll(PdfName key, PdfObject value, int writeFlags)
+        {
+            PdfDictionary pdfDictionary = null;
+            if (((uint)writeFlags & (true ? 1u : 0u)) != 0)
+            {
+                for (int i = 0; i < merged.Count; i++)
+                {
+                    pdfDictionary = GetMerged(i);
+                    pdfDictionary.Put(key, value);
+                }
+            }
+
+            if (((uint)writeFlags & 2u) != 0)
+            {
+                for (int i = 0; i < widgets.Count; i++)
+                {
+                    pdfDictionary = GetWidget(i);
+                    pdfDictionary.Put(key, value);
+                }
+            }
+
+            if (((uint)writeFlags & 4u) != 0)
+            {
+                for (int i = 0; i < values.Count; i++)
+                {
+                    pdfDictionary = GetValue(i);
+                    pdfDictionary.Put(key, value);
+                }
+            }
+        }
+
+        public virtual void MarkUsed(AcroFields parentFields, int writeFlags)
+        {
+            if (((uint)writeFlags & 4u) != 0)
+            {
+                for (int i = 0; i < Size; i++)
+                {
+                    parentFields.MarkUsed(GetValue(i));
+                }
+            }
+
+            if (((uint)writeFlags & 2u) != 0)
+            {
+                for (int j = 0; j < Size; j++)
+                {
+                    parentFields.MarkUsed(GetWidget(j));
+                }
+            }
+        }
+
+        internal void Remove(int killIdx)
+        {
+            values.RemoveAt(killIdx);
+            widgets.RemoveAt(killIdx);
+            widget_refs.RemoveAt(killIdx);
+            merged.RemoveAt(killIdx);
+            page.RemoveAt(killIdx);
+            tabOrder.RemoveAt(killIdx);
+        }
+
+        public virtual PdfDictionary GetValue(int idx)
+        {
+            return values[idx];
+        }
+
+        internal void AddValue(PdfDictionary value)
+        {
+            values.Add(value);
+        }
+
+        public virtual PdfDictionary GetWidget(int idx)
+        {
+            return widgets[idx];
+        }
+
+        internal void AddWidget(PdfDictionary widget)
+        {
+            widgets.Add(widget);
+        }
+
+        public virtual PdfIndirectReference GetWidgetRef(int idx)
+        {
+            return widget_refs[idx];
+        }
+
+        internal void AddWidgetRef(PdfIndirectReference widgRef)
+        {
+            widget_refs.Add(widgRef);
+        }
+
+        public virtual PdfDictionary GetMerged(int idx)
+        {
+            return merged[idx];
+        }
+
+        internal void AddMerged(PdfDictionary mergeDict)
+        {
+            merged.Add(mergeDict);
+        }
+
+        public virtual int GetPage(int idx)
+        {
+            return page[idx];
+        }
+
+        internal void AddPage(int pg)
+        {
+            page.Add(pg);
+        }
+
+        internal void ForcePage(int idx, int pg)
+        {
+            page[idx] = pg;
+        }
+
+        public virtual int GetTabOrder(int idx)
+        {
+            return tabOrder[idx];
+        }
+
+        internal void AddTabOrder(int order)
+        {
+            tabOrder.Add(order);
+        }
+    }
+
+    private class InstHit
+    {
+        private IntHashtable hits;
+
+        public InstHit(int[] inst)
+        {
+            if (inst != null)
+            {
+                hits = new IntHashtable();
+                for (int i = 0; i < inst.Length; i++)
+                {
+                    hits[inst[i]] = 1;
+                }
+            }
+        }
+
+        public virtual bool IsHit(int n)
+        {
+            if (hits == null)
+            {
+                return true;
+            }
+
+            return hits.ContainsKey(n);
+        }
+    }
+
+    private class ISorterComparator : IComparer<object[]>
+    {
+        public virtual int Compare(object[] o1, object[] o2)
+        {
+            int num = ((int[])o1[1])[0];
+            int num2 = ((int[])o2[1])[0];
+            return num - num2;
+        }
+    }
+
+    public class FieldPosition
+    {
+        public int page;
+
+        public Rectangle position;
+    }
+
+    public const int DA_FONT = 0;
+
+    public const int DA_SIZE = 1;
+
+    public const int DA_COLOR = 2;
+
+    public const int FIELD_TYPE_NONE = 0;
+
+    public const int FIELD_TYPE_PUSHBUTTON = 1;
+
+    public const int FIELD_TYPE_CHECKBOX = 2;
+
+    public const int FIELD_TYPE_RADIOBUTTON = 3;
+
+    public const int FIELD_TYPE_TEXT = 4;
+
+    public const int FIELD_TYPE_LIST = 5;
+
+    public const int FIELD_TYPE_COMBO = 6;
+
+    public const int FIELD_TYPE_SIGNATURE = 7;
+
+    internal PdfReader reader;
+
+    internal PdfWriter writer;
+
+    internal IDictionary<string, Item> fields;
+
+    private int topFirst;
+
+    private Dictionary<string, int[]> sigNames;
+
+    private bool append;
+
+    private Dictionary<int, BaseFont> extensionFonts = new Dictionary<int, BaseFont>();
+
+    private XfaForm xfa;
+
+    private bool lastWasString;
+
+    private bool generateAppearances = true;
+
+    private Dictionary<string, BaseFont> localFonts = new Dictionary<string, BaseFont>();
+
+    private float extraMarginLeft;
+
+    private float extraMarginTop;
+
+    private List<BaseFont> substitutionFonts;
+
+    private List<string> orderedSignatureNames;
+
+    private static Dictionary<string, string[]> stdFieldFontNames;
+
+    private IDictionary<string, TextField> fieldCache;
+
+    private int totalRevisions;
+
+    private static readonly PdfName[] buttonRemove;
+
+    public virtual IDictionary<string, Item> Fields => fields;
+
+    public virtual bool GenerateAppearances
+    {
+        get
+        {
+            return generateAppearances;
+        }
+        set
+        {
+            generateAppearances = value;
+            PdfDictionary asDict = reader.Catalog.GetAsDict(PdfName.ACROFORM);
+            if (generateAppearances)
+            {
+                asDict.Remove(PdfName.NEEDAPPEARANCES);
+            }
+            else
+            {
+                asDict.Put(PdfName.NEEDAPPEARANCES, PdfBoolean.PDFTRUE);
+            }
+        }
+    }
+
+    public virtual int TotalRevisions
+    {
+        get
+        {
+            FindSignatureNames();
+            return totalRevisions;
+        }
+    }
+
+    public virtual IDictionary<string, TextField> FieldCache
+    {
+        get
+        {
+            return fieldCache;
+        }
+        set
+        {
+            fieldCache = value;
+        }
+    }
+
+    public virtual List<BaseFont> SubstitutionFonts
+    {
+        get
+        {
+            return substitutionFonts;
+        }
+        set
+        {
+            substitutionFonts = value;
+        }
+    }
+
+    public virtual XfaForm Xfa => xfa;
+
+    internal AcroFields(PdfReader reader, PdfWriter writer)
+    {
+        this.reader = reader;
+        this.writer = writer;
+        xfa = new XfaForm(reader);
+        if (writer is PdfStamperImp)
+        {
+            append = ((PdfStamperImp)writer).append;
+        }
+
+        Fill();
+    }
+
+    internal void Fill()
+    {
+        fields = new LinkedDictionary<string, Item>();
+        PdfDictionary pdfDictionary = (PdfDictionary)PdfReader.GetPdfObjectRelease(reader.Catalog.Get(PdfName.ACROFORM));
+        if (pdfDictionary == null)
+        {
+            return;
+        }
+
+        PdfBoolean asBoolean = pdfDictionary.GetAsBoolean(PdfName.NEEDAPPEARANCES);
+        if (asBoolean == null || !asBoolean.BooleanValue)
+        {
+            GenerateAppearances = true;
+        }
+        else
+        {
+            GenerateAppearances = false;
+        }
+
+        PdfArray pdfArray = (PdfArray)PdfReader.GetPdfObjectRelease(pdfDictionary.Get(PdfName.FIELDS));
+        if (pdfArray == null || pdfArray.Size == 0)
+        {
+            return;
+        }
+
+        for (int i = 1; i <= reader.NumberOfPages; i++)
+        {
+            PdfDictionary pageNRelease = reader.GetPageNRelease(i);
+            PdfArray pdfArray2 = (PdfArray)PdfReader.GetPdfObjectRelease(pageNRelease.Get(PdfName.ANNOTS), pageNRelease);
+            if (pdfArray2 == null)
+            {
+                continue;
+            }
+
+            for (int j = 0; j < pdfArray2.Size; j++)
+            {
+                PdfDictionary asDict = pdfArray2.GetAsDict(j);
+                if (asDict == null)
+                {
+                    PdfReader.ReleaseLastXrefPartial(pdfArray2.GetAsIndirectObject(j));
+                    continue;
+                }
+
+                if (!PdfName.WIDGET.Equals(asDict.GetAsName(PdfName.SUBTYPE)))
+                {
+                    PdfReader.ReleaseLastXrefPartial(pdfArray2.GetAsIndirectObject(j));
+                    continue;
+                }
+
+                PdfDictionary pdfDictionary2 = asDict;
+                PdfDictionary pdfDictionary3 = new PdfDictionary();
+                pdfDictionary3.Merge(asDict);
+                string text = "";
+                PdfDictionary pdfDictionary4 = null;
+                PdfObject pdfObject = null;
+                while (asDict != null)
+                {
+                    pdfDictionary3.MergeDifferent(asDict);
+                    PdfString asString = asDict.GetAsString(PdfName.T);
+                    if (asString != null)
+                    {
+                        text = asString.ToUnicodeString() + "." + text;
+                    }
+
+                    if (pdfObject == null && asDict.Get(PdfName.V) != null)
+                    {
+                        pdfObject = PdfReader.GetPdfObjectRelease(asDict.Get(PdfName.V));
+                    }
+
+                    if (pdfDictionary4 == null && asString != null)
+                    {
+                        pdfDictionary4 = asDict;
+                        if (asDict.Get(PdfName.V) == null && pdfObject != null)
+                        {
+                            pdfDictionary4.Put(PdfName.V, pdfObject);
+                        }
+                    }
+
+                    asDict = asDict.GetAsDict(PdfName.PARENT);
+                }
+
+                if (text.Length > 0)
+                {
+                    text = text.Substring(0, text.Length - 1);
+                }
+
+                if (!fields.TryGetValue(text, out var value))
+                {
+                    value = new Item();
+                    fields[text] = value;
+                }
+
+                if (pdfDictionary4 == null)
+                {
+                    value.AddValue(pdfDictionary2);
+                }
+                else
+                {
+                    value.AddValue(pdfDictionary4);
+                }
+
+                value.AddWidget(pdfDictionary2);
+                value.AddWidgetRef(pdfArray2.GetAsIndirectObject(j));
+                if (pdfDictionary != null)
+                {
+                    pdfDictionary3.MergeDifferent(pdfDictionary);
+                }
+
+                value.AddMerged(pdfDictionary3);
+                value.AddPage(i);
+                value.AddTabOrder(j);
+            }
+        }
+
+        PdfNumber asNumber = pdfDictionary.GetAsNumber(PdfName.SIGFLAGS);
+        if (asNumber == null || (asNumber.IntValue & 1) != 1)
+        {
+            return;
+        }
+
+        for (int k = 0; k < pdfArray.Size; k++)
+        {
+            PdfDictionary asDict2 = pdfArray.GetAsDict(k);
+            if (asDict2 == null)
+            {
+                PdfReader.ReleaseLastXrefPartial(pdfArray.GetAsIndirectObject(k));
+                continue;
+            }
+
+            if (!PdfName.WIDGET.Equals(asDict2.GetAsName(PdfName.SUBTYPE)))
+            {
+                PdfReader.ReleaseLastXrefPartial(pdfArray.GetAsIndirectObject(k));
+                continue;
+            }
+
+            PdfArray pdfArray3 = (PdfArray)PdfReader.GetPdfObjectRelease(asDict2.Get(PdfName.KIDS));
+            if (pdfArray3 != null)
+            {
+                continue;
+            }
+
+            PdfDictionary pdfDictionary5 = new PdfDictionary();
+            pdfDictionary5.Merge(asDict2);
+            PdfString asString2 = asDict2.GetAsString(PdfName.T);
+            if (asString2 != null)
+            {
+                string key = asString2.ToUnicodeString();
+                if (!fields.ContainsKey(key))
+                {
+                    Item item = new Item();
+                    fields[key] = item;
+                    item.AddValue(pdfDictionary5);
+                    item.AddWidget(pdfDictionary5);
+                    item.AddWidgetRef(pdfArray.GetAsIndirectObject(k));
+                    item.AddMerged(pdfDictionary5);
+                    item.AddPage(-1);
+                    item.AddTabOrder(-1);
+                }
+            }
+        }
+    }
+
+    public virtual string[] GetAppearanceStates(string fieldName)
+    {
+        if (!fields.ContainsKey(fieldName))
+        {
+            return null;
+        }
+
+        Item item = fields[fieldName];
+        HashSet2<string> hashSet = new HashSet2<string>();
+        PdfDictionary value = item.GetValue(0);
+        PdfString asString = value.GetAsString(PdfName.OPT);
+        if (asString != null)
+        {
+            hashSet.Add(asString.ToUnicodeString());
+        }
+        else
+        {
+            PdfArray asArray = value.GetAsArray(PdfName.OPT);
+            if (asArray != null)
+            {
+                for (int i = 0; i < asArray.Size; i++)
+                {
+                    PdfObject directObject = asArray.GetDirectObject(i);
+                    PdfString pdfString = null;
+                    switch (directObject.Type)
+                    {
+                        case 5:
+                            pdfString = ((PdfArray)directObject).GetAsString(1);
+                            break;
+                        case 3:
+                            pdfString = (PdfString)directObject;
+                            break;
+                    }
+
+                    if (pdfString != null)
+                    {
+                        hashSet.Add(pdfString.ToUnicodeString());
+                    }
+                }
+            }
+        }
+
+        for (int j = 0; j < item.Size; j++)
+        {
+            PdfDictionary widget = item.GetWidget(j);
+            widget = widget.GetAsDict(PdfName.AP);
+            if (widget == null)
+            {
+                continue;
+            }
+
+            widget = widget.GetAsDict(PdfName.N);
+            if (widget == null)
+            {
+                continue;
+            }
+
+            foreach (PdfName key in widget.Keys)
+            {
+                string item2 = PdfName.DecodeName(key.ToString());
+                hashSet.Add(item2);
+            }
+        }
+
+        string[] array = new string[hashSet.Count];
+        hashSet.CopyTo(array, 0);
+        return array;
+    }
+
+    private string[] GetListOption(string fieldName, int idx)
+    {
+        Item fieldItem = GetFieldItem(fieldName);
+        if (fieldItem == null)
+        {
+            return null;
+        }
+
+        PdfArray asArray = fieldItem.GetMerged(0).GetAsArray(PdfName.OPT);
+        if (asArray == null)
+        {
+            return null;
+        }
+
+        string[] array = new string[asArray.Size];
+        for (int i = 0; i < asArray.Size; i++)
+        {
+            PdfObject directObject = asArray.GetDirectObject(i);
+            try
+            {
+                if (directObject.IsArray())
+                {
+                    directObject = ((PdfArray)directObject).GetDirectObject(idx);
+                }
+
+                if (directObject.IsString())
+                {
+                    array[i] = ((PdfString)directObject).ToUnicodeString();
+                }
+                else
+                {
+                    array[i] = directObject.ToString();
+                }
+            }
+            catch
+            {
+                array[i] = "";
+            }
+        }
+
+        return array;
+    }
+
+    public virtual string[] GetListOptionExport(string fieldName)
+    {
+        return GetListOption(fieldName, 0);
+    }
+
+    public virtual string[] GetListOptionDisplay(string fieldName)
+    {
+        return GetListOption(fieldName, 1);
+    }
+
+    public virtual bool SetListOption(string fieldName, string[] exportValues, string[] displayValues)
+    {
+        if (exportValues == null && displayValues == null)
+        {
+            return false;
+        }
+
+        if (exportValues != null && displayValues != null && exportValues.Length != displayValues.Length)
+        {
+            throw new ArgumentException(MessageLocalization.GetComposedMessage("the.export.and.the.display.array.must.have.the.same.size"));
+        }
+
+        int fieldType = GetFieldType(fieldName);
+        if (fieldType != 6 && fieldType != 5)
+        {
+            return false;
+        }
+
+        Item item = fields[fieldName];
+        string[] array = null;
+        if (exportValues == null && displayValues != null)
+        {
+            array = displayValues;
+        }
+        else if (exportValues != null && displayValues == null)
+        {
+            array = exportValues;
+        }
+
+        PdfArray pdfArray = new PdfArray();
+        if (array != null)
+        {
+            for (int i = 0; i < array.Length; i++)
+            {
+                pdfArray.Add(new PdfString(array[i], "UnicodeBig"));
+            }
+        }
+        else
+        {
+            for (int j = 0; j < exportValues.Length; j++)
+            {
+                PdfArray pdfArray2 = new PdfArray();
+                pdfArray2.Add(new PdfString(exportValues[j], "UnicodeBig"));
+                pdfArray2.Add(new PdfString(displayValues[j], "UnicodeBig"));
+                pdfArray.Add(pdfArray2);
+            }
+        }
+
+        item.WriteToAll(PdfName.OPT, pdfArray, 5);
+        return true;
+    }
+
+    public virtual int GetFieldType(string fieldName)
+    {
+        Item fieldItem = GetFieldItem(fieldName);
+        if (fieldItem == null)
+        {
+            return 0;
+        }
+
+        PdfDictionary merged = fieldItem.GetMerged(0);
+        PdfName asName = merged.GetAsName(PdfName.FT);
+        if (asName == null)
+        {
+            return 0;
+        }
+
+        int num = 0;
+        PdfNumber asNumber = merged.GetAsNumber(PdfName.FF);
+        if (asNumber != null)
+        {
+            num = asNumber.IntValue;
+        }
+
+        if (PdfName.BTN.Equals(asName))
+        {
+            if (((uint)num & 0x10000u) != 0)
+            {
+                return 1;
+            }
+
+            if (((uint)num & 0x8000u) != 0)
+            {
+                return 3;
+            }
+
+            return 2;
+        }
+
+        if (PdfName.TX.Equals(asName))
+        {
+            return 4;
+        }
+
+        if (PdfName.CH.Equals(asName))
+        {
+            if (((uint)num & 0x20000u) != 0)
+            {
+                return 6;
+            }
+
+            return 5;
+        }
+
+        if (PdfName.SIG.Equals(asName))
+        {
+            return 7;
+        }
+
+        return 0;
+    }
+
+    public virtual void ExportAsFdf(FdfWriter writer)
+    {
+        foreach (KeyValuePair<string, Item> field2 in fields)
+        {
+            Item value = field2.Value;
+            string key = field2.Key;
+            PdfObject pdfObject = value.GetMerged(0).Get(PdfName.V);
+            if (pdfObject != null)
+            {
+                string field = GetField(key);
+                if (lastWasString)
+                {
+                    writer.SetFieldAsString(key, field);
+                }
+                else
+                {
+                    writer.SetFieldAsName(key, field);
+                }
+            }
+        }
+    }
+
+    public virtual bool RenameField(string oldName, string newName)
+    {
+        int num = oldName.LastIndexOf('.') + 1;
+        int num2 = newName.LastIndexOf('.') + 1;
+        if (num != num2)
+        {
+            return false;
+        }
+
+        if (!oldName.Substring(0, num).Equals(newName.Substring(0, num2)))
+        {
+            return false;
+        }
+
+        if (fields.ContainsKey(newName))
+        {
+            return false;
+        }
+
+        if (!fields.ContainsKey(oldName))
+        {
+            return false;
+        }
+
+        Item item = fields[oldName];
+        newName = newName.Substring(num2);
+        PdfString value = new PdfString(newName, "UnicodeBig");
+        item.WriteToAll(PdfName.T, value, 5);
+        item.MarkUsed(this, 4);
+        fields.Remove(oldName);
+        fields[newName] = item;
+        return true;
+    }
+
+    public static object[] SplitDAelements(string da)
+    {
+        PRTokeniser pRTokeniser = new PRTokeniser(new RandomAccessFileOrArray(new RandomAccessSourceFactory().CreateSource(PdfEncodings.ConvertToBytes(da, null))));
+        List<string> list = new List<string>();
+        object[] array = new object[3];
+        while (pRTokeniser.NextToken())
+        {
+            if (pRTokeniser.TokenType == PRTokeniser.TokType.COMMENT)
+            {
+                continue;
+            }
+
+            if (pRTokeniser.TokenType == PRTokeniser.TokType.OTHER)
+            {
+                string stringValue = pRTokeniser.StringValue;
+                if (stringValue.Equals("Tf"))
+                {
+                    if (list.Count >= 2)
+                    {
+                        array[0] = list[list.Count - 2];
+                        array[1] = float.Parse(list[list.Count - 1], NumberFormatInfo.InvariantInfo);
+                    }
+                }
+                else if (stringValue.Equals("g"))
+                {
+                    if (list.Count >= 1)
+                    {
+                        float num = float.Parse(list[list.Count - 1], NumberFormatInfo.InvariantInfo);
+                        if (num != 0f)
+                        {
+                            array[2] = new GrayColor(num);
+                        }
+                    }
+                }
+                else if (stringValue.Equals("rg"))
+                {
+                    if (list.Count >= 3)
+                    {
+                        float red = float.Parse(list[list.Count - 3], NumberFormatInfo.InvariantInfo);
+                        float green = float.Parse(list[list.Count - 2], NumberFormatInfo.InvariantInfo);
+                        float blue = float.Parse(list[list.Count - 1], NumberFormatInfo.InvariantInfo);
+                        array[2] = new BaseColor(red, green, blue);
+                    }
+                }
+                else if (stringValue.Equals("k") && list.Count >= 4)
+                {
+                    float floatCyan = float.Parse(list[list.Count - 4], NumberFormatInfo.InvariantInfo);
+                    float floatMagenta = float.Parse(list[list.Count - 3], NumberFormatInfo.InvariantInfo);
+                    float floatYellow = float.Parse(list[list.Count - 2], NumberFormatInfo.InvariantInfo);
+                    float floatBlack = float.Parse(list[list.Count - 1], NumberFormatInfo.InvariantInfo);
+                    array[2] = new CMYKColor(floatCyan, floatMagenta, floatYellow, floatBlack);
+                }
+
+                list.Clear();
+            }
+            else
+            {
+                list.Add(pRTokeniser.StringValue);
+            }
+        }
+
+        return array;
+    }
+
+    public virtual void DecodeGenericDictionary(PdfDictionary merged, BaseField tx)
+    {
+        int num = 0;
+        PdfString asString = merged.GetAsString(PdfName.DA);
+        if (asString != null)
+        {
+            bool flag = false;
+            object[] array = SplitDAelements(asString.ToUnicodeString());
+            if (array[1] != null)
+            {
+                tx.FontSize = (float)array[1];
+            }
+
+            if (array[2] != null)
+            {
+                tx.TextColor = (BaseColor)array[2];
+            }
+
+            if (array[0] != null)
+            {
+                PdfDictionary asDict = merged.GetAsDict(PdfName.DR);
+                if (asDict != null)
+                {
+                    PdfDictionary asDict2 = asDict.GetAsDict(PdfName.FONT);
+                    if (asDict2 != null)
+                    {
+                        PdfObject pdfObject = asDict2.Get(new PdfName((string)array[0]));
+                        if (pdfObject != null && pdfObject.Type == 10)
+                        {
+                            PRIndirectReference pRIndirectReference = (PRIndirectReference)pdfObject;
+                            BaseFont font = new DocumentFont((PRIndirectReference)pdfObject, asDict.GetAsDict(PdfName.ENCODING));
+                            tx.Font = font;
+                            int number = pRIndirectReference.Number;
+                            extensionFonts.TryGetValue(number, out var value);
+                            if (value == null && !extensionFonts.ContainsKey(number))
+                            {
+                                PdfDictionary pdfDictionary = (PdfDictionary)PdfReader.GetPdfObject(pdfObject);
+                                PdfDictionary asDict3 = pdfDictionary.GetAsDict(PdfName.FONTDESCRIPTOR);
+                                if (asDict3 != null)
+                                {
+                                    PRStream pRStream = (PRStream)PdfReader.GetPdfObject(asDict3.Get(PdfName.FONTFILE2));
+                                    if (pRStream == null)
+                                    {
+                                        pRStream = (PRStream)PdfReader.GetPdfObject(asDict3.Get(PdfName.FONTFILE3));
+                                    }
+
+                                    if (pRStream == null)
+                                    {
+                                        extensionFonts[number] = null;
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            value = BaseFont.CreateFont("font.ttf", "Identity-H", embedded: true, cached: false, PdfReader.GetStreamBytes(pRStream), null);
+                                        }
+                                        catch
+                                        {
+                                        }
+
+                                        extensionFonts[number] = value;
+                                    }
+                                }
+                            }
+
+                            if (tx is TextField)
+                            {
+                                ((TextField)tx).ExtensionFont = value;
+                            }
+                        }
+                        else
+                        {
+                            flag = true;
+                        }
+                    }
+                    else
+                    {
+                        flag = true;
+                    }
+                }
+                else
+                {
+                    flag = true;
+                }
+            }
+
+            if (flag)
+            {
+                if (!localFonts.TryGetValue((string)array[0], out var value2))
+                {
+                    stdFieldFontNames.TryGetValue((string)array[0], out var value3);
+                    if (value3 != null)
+                    {
+                        try
+                        {
+                            string encoding = "winansi";
+                            if (value3.Length > 1)
+                            {
+                                encoding = value3[1];
+                            }
+
+                            value2 = BaseFont.CreateFont(value3[0], encoding, embedded: false);
+                            tx.Font = value2;
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                else
+                {
+                    tx.Font = value2;
+                }
+            }
+        }
+
+        PdfDictionary asDict4 = merged.GetAsDict(PdfName.MK);
+        if (asDict4 != null)
+        {
+            PdfArray asArray = asDict4.GetAsArray(PdfName.BC);
+            BaseColor baseColor = (tx.BorderColor = GetMKColor(asArray));
+            if (baseColor != null)
+            {
+                tx.BorderWidth = 1f;
+            }
+
+            asArray = asDict4.GetAsArray(PdfName.BG);
+            tx.BackgroundColor = GetMKColor(asArray);
+            PdfNumber asNumber = asDict4.GetAsNumber(PdfName.R);
+            if (asNumber != null)
+            {
+                tx.Rotation = asNumber.IntValue;
+            }
+        }
+
+        PdfNumber asNumber2 = merged.GetAsNumber(PdfName.F);
+        num = 0;
+        tx.Visibility = 2;
+        if (asNumber2 != null)
+        {
+            num = asNumber2.IntValue;
+            if (((uint)num & 4u) != 0 && ((uint)num & 2u) != 0)
+            {
+                tx.Visibility = 1;
+            }
+            else if (((uint)num & 4u) != 0 && ((uint)num & 0x20u) != 0)
+            {
+                tx.Visibility = 3;
+            }
+            else if (((uint)num & 4u) != 0)
+            {
+                tx.Visibility = 0;
+            }
+        }
+
+        asNumber2 = merged.GetAsNumber(PdfName.FF);
+        num = 0;
+        if (asNumber2 != null)
+        {
+            num = asNumber2.IntValue;
+        }
+
+        tx.Options = num;
+        if (((uint)num & 0x1000000u) != 0)
+        {
+            PdfNumber asNumber3 = merged.GetAsNumber(PdfName.MAXLEN);
+            int maxCharacterLength = 0;
+            if (asNumber3 != null)
+            {
+                maxCharacterLength = asNumber3.IntValue;
+            }
+
+            tx.MaxCharacterLength = maxCharacterLength;
+        }
+
+        asNumber2 = merged.GetAsNumber(PdfName.Q);
+        if (asNumber2 != null)
+        {
+            if (asNumber2.IntValue == 1)
+            {
+                tx.Alignment = 1;
+            }
+            else if (asNumber2.IntValue == 2)
+            {
+                tx.Alignment = 2;
+            }
+        }
+
+        PdfDictionary asDict5 = merged.GetAsDict(PdfName.BS);
+        if (asDict5 != null)
+        {
+            PdfNumber asNumber4 = asDict5.GetAsNumber(PdfName.W);
+            if (asNumber4 != null)
+            {
+                tx.BorderWidth = asNumber4.FloatValue;
+            }
+
+            PdfName asName = asDict5.GetAsName(PdfName.S);
+            if (PdfName.D.Equals(asName))
+            {
+                tx.BorderStyle = 1;
+            }
+            else if (PdfName.B.Equals(asName))
+            {
+                tx.BorderStyle = 2;
+            }
+            else if (PdfName.I.Equals(asName))
+            {
+                tx.BorderStyle = 3;
+            }
+            else if (PdfName.U.Equals(asName))
+            {
+                tx.BorderStyle = 4;
+            }
+
+            return;
+        }
+
+        PdfArray asArray2 = merged.GetAsArray(PdfName.BORDER);
+        if (asArray2 != null)
+        {
+            if (asArray2.Size >= 3)
+            {
+                tx.BorderWidth = asArray2.GetAsNumber(2).FloatValue;
+            }
+
+            if (asArray2.Size >= 4)
+            {
+                tx.BorderStyle = 1;
+            }
+        }
+    }
+
+    internal PdfAppearance GetAppearance(PdfDictionary merged, string[] values, string fieldName)
+    {
+        PdfName asName = merged.GetAsName(PdfName.FT);
+        if (PdfName.BTN.Equals(asName))
+        {
+            PdfNumber asNumber = merged.GetAsNumber(PdfName.FF);
+            bool flag = asNumber != null && (asNumber.IntValue & 0x8000) != 0;
+            RadioCheckField radioCheckField = new RadioCheckField(writer, null, null, null);
+            DecodeGenericDictionary(merged, radioCheckField);
+            PdfArray asArray = merged.GetAsArray(PdfName.RECT);
+            Rectangle rectangle = PdfReader.GetNormalizedRectangle(asArray);
+            if (radioCheckField.Rotation == 90 || radioCheckField.Rotation == 270)
+            {
+                rectangle = rectangle.Rotate();
+            }
+
+            radioCheckField.Box = rectangle;
+            if (!flag)
+            {
+                radioCheckField.CheckType = 3;
+            }
+
+            return radioCheckField.GetAppearance(flag, !merged.GetAsName(PdfName.AS).Equals(PdfName.Off_));
+        }
+
+        topFirst = 0;
+        string text = ((values.Length > 0) ? values[0] : null);
+        TextField textField = null;
+        if (fieldCache == null || !fieldCache.ContainsKey(fieldName))
+        {
+            textField = new TextField(writer, null, null);
+            textField.SetExtraMargin(extraMarginLeft, extraMarginTop);
+            textField.BorderWidth = 0f;
+            textField.SubstitutionFonts = substitutionFonts;
+            DecodeGenericDictionary(merged, textField);
+            PdfArray asArray2 = merged.GetAsArray(PdfName.RECT);
+            Rectangle rectangle2 = PdfReader.GetNormalizedRectangle(asArray2);
+            if (textField.Rotation == 90 || textField.Rotation == 270)
+            {
+                rectangle2 = rectangle2.Rotate();
+            }
+
+            textField.Box = rectangle2;
+            if (fieldCache != null)
+            {
+                fieldCache[fieldName] = textField;
+            }
+        }
+        else
+        {
+            textField = fieldCache[fieldName];
+            textField.Writer = writer;
+        }
+
+        if (PdfName.TX.Equals(asName))
+        {
+            if (values.Length > 0 && values[0] != null)
+            {
+                textField.Text = values[0];
+            }
+
+            return textField.GetAppearance();
+        }
+
+        if (!PdfName.CH.Equals(asName))
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("an.appearance.was.requested.without.a.variable.text.field"));
+        }
+
+        PdfArray asArray3 = merged.GetAsArray(PdfName.OPT);
+        int num = 0;
+        PdfNumber asNumber2 = merged.GetAsNumber(PdfName.FF);
+        if (asNumber2 != null)
+        {
+            num = asNumber2.IntValue;
+        }
+
+        if (((uint)num & 0x20000u) != 0 && asArray3 == null)
+        {
+            textField.Text = text;
+            return textField.GetAppearance();
+        }
+
+        if (asArray3 != null)
+        {
+            string[] array = new string[asArray3.Size];
+            string[] array2 = new string[asArray3.Size];
+            for (int i = 0; i < asArray3.Size; i++)
+            {
+                PdfObject pdfObject = asArray3.GetPdfObject(i);
+                if (pdfObject.IsString())
+                {
+                    array[i] = (array2[i] = ((PdfString)pdfObject).ToUnicodeString());
+                    continue;
+                }
+
+                PdfArray pdfArray = (PdfArray)pdfObject;
+                array2[i] = pdfArray.GetAsString(0).ToUnicodeString();
+                array[i] = pdfArray.GetAsString(1).ToUnicodeString();
+            }
+
+            if (((uint)num & 0x20000u) != 0)
+            {
+                for (int j = 0; j < array.Length; j++)
+                {
+                    if (text.Equals(array2[j]))
+                    {
+                        text = array[j];
+                        break;
+                    }
+                }
+
+                textField.Text = text;
+                return textField.GetAppearance();
+            }
+
+            List<int> list = new List<int>();
+            for (int k = 0; k < array2.Length; k++)
+            {
+                foreach (string text2 in values)
+                {
+                    if (text2 != null && text2.Equals(array2[k]))
+                    {
+                        list.Add(k);
+                        break;
+                    }
+                }
+            }
+
+            textField.Choices = array;
+            textField.ChoiceExports = array2;
+            textField.ChoiceSelections = list;
+        }
+
+        PdfAppearance listAppearance = textField.GetListAppearance();
+        topFirst = textField.TopFirst;
+        return listAppearance;
+    }
+
+    internal PdfAppearance GetAppearance(PdfDictionary merged, string text, string fieldName)
+    {
+        string[] values = new string[1] { text };
+        return GetAppearance(merged, values, fieldName);
+    }
+
+    internal BaseColor GetMKColor(PdfArray ar)
+    {
+        if (ar == null)
+        {
+            return null;
+        }
+
+        return ar.Size switch
+        {
+            1 => new GrayColor(ar.GetAsNumber(0).FloatValue),
+            3 => new BaseColor(ExtendedColor.Normalize(ar.GetAsNumber(0).FloatValue), ExtendedColor.Normalize(ar.GetAsNumber(1).FloatValue), ExtendedColor.Normalize(ar.GetAsNumber(2).FloatValue)),
+            4 => new CMYKColor(ar.GetAsNumber(0).FloatValue, ar.GetAsNumber(1).FloatValue, ar.GetAsNumber(2).FloatValue, ar.GetAsNumber(3).FloatValue),
+            _ => null,
+        };
+    }
+
+    public virtual string GetFieldRichValue(string name)
+    {
+        if (xfa.XfaPresent)
+        {
+            return null;
+        }
+
+        fields.TryGetValue(name, out var value);
+        if (value == null)
+        {
+            return null;
+        }
+
+        PdfDictionary merged = value.GetMerged(0);
+        PdfString asString = merged.GetAsString(PdfName.RV);
+        string result = null;
+        if (asString != null)
+        {
+            result = asString.ToString();
+        }
+
+        return result;
+    }
+
+    public virtual string GetField(string name)
+    {
+        if (xfa.XfaPresent)
+        {
+            name = xfa.FindFieldName(name, this);
+            if (name == null)
+            {
+                return null;
+            }
+
+            name = XfaForm.Xml2Som.GetShortName(name);
+            return XfaForm.GetNodeText(xfa.FindDatasetsNode(name));
+        }
+
+        if (!fields.ContainsKey(name))
+        {
+            return null;
+        }
+
+        Item item = fields[name];
+        lastWasString = false;
+        PdfDictionary merged = item.GetMerged(0);
+        PdfObject pdfObject = PdfReader.GetPdfObject(merged.Get(PdfName.V));
+        if (pdfObject == null)
+        {
+            return "";
+        }
+
+        if (pdfObject is PRStream)
+        {
+            byte[] streamBytes = PdfReader.GetStreamBytes((PRStream)pdfObject);
+            return PdfEncodings.ConvertToString(streamBytes, "Cp1252");
+        }
+
+        PdfName asName = merged.GetAsName(PdfName.FT);
+        if (PdfName.BTN.Equals(asName))
+        {
+            PdfNumber asNumber = merged.GetAsNumber(PdfName.FF);
+            int num = 0;
+            if (asNumber != null)
+            {
+                num = asNumber.IntValue;
+            }
+
+            if (((uint)num & 0x10000u) != 0)
+            {
+                return "";
+            }
+
+            string text = "";
+            if (pdfObject is PdfName)
+            {
+                text = PdfName.DecodeName(pdfObject.ToString());
+            }
+            else if (pdfObject is PdfString)
+            {
+                text = ((PdfString)pdfObject).ToUnicodeString();
+            }
+
+            PdfArray asArray = item.GetValue(0).GetAsArray(PdfName.OPT);
+            if (asArray != null)
+            {
+                int num2 = 0;
+                try
+                {
+                    num2 = int.Parse(text);
+                    PdfString asString = asArray.GetAsString(num2);
+                    text = asString.ToUnicodeString();
+                    lastWasString = true;
+                }
+                catch
+                {
+                }
+            }
+
+            return text;
+        }
+
+        if (pdfObject is PdfString)
+        {
+            lastWasString = true;
+            return ((PdfString)pdfObject).ToUnicodeString();
+        }
+
+        if (pdfObject is PdfName)
+        {
+            return PdfName.DecodeName(pdfObject.ToString());
+        }
+
+        return "";
+    }
+
+    public virtual string[] GetListSelection(string name)
+    {
+        string field = GetField(name);
+        string[] result = ((field != null) ? new string[1] { field } : new string[0]);
+        if (!fields.ContainsKey(name))
+        {
+            return null;
+        }
+
+        Item item = fields[name];
+        PdfArray asArray = item.GetMerged(0).GetAsArray(PdfName.I);
+        if (asArray == null)
+        {
+            return result;
+        }
+
+        result = new string[asArray.Size];
+        string[] listOptionExport = GetListOptionExport(name);
+        int num = 0;
+        foreach (PdfNumber array in asArray.ArrayList)
+        {
+            result[num++] = listOptionExport[array.IntValue];
+        }
+
+        return result;
+    }
+
+    public virtual bool SetFieldProperty(string field, string name, object value, int[] inst)
+    {
+        if (writer == null)
+        {
+            throw new Exception(MessageLocalization.GetComposedMessage("this.acrofields.instance.is.read.only"));
+        }
+
+        if (!fields.ContainsKey(field))
+        {
+            return false;
+        }
+
+        Item item = fields[field];
+        InstHit instHit = new InstHit(inst);
+        if (Util.EqualsIgnoreCase(name, "textfont"))
+        {
+            for (int i = 0; i < item.Size; i++)
+            {
+                if (!instHit.IsHit(i))
+                {
+                    continue;
+                }
+
+                PdfDictionary merged = item.GetMerged(i);
+                PdfString asString = merged.GetAsString(PdfName.DA);
+                PdfDictionary pdfDictionary = merged.GetAsDict(PdfName.DR);
+                if (asString == null)
+                {
+                    continue;
+                }
+
+                if (pdfDictionary == null)
+                {
+                    pdfDictionary = new PdfDictionary();
+                    merged.Put(PdfName.DR, pdfDictionary);
+                }
+
+                object[] array = SplitDAelements(asString.ToUnicodeString());
+                PdfAppearance pdfAppearance = new PdfAppearance();
+                if (array[0] == null)
+                {
+                    continue;
+                }
+
+                BaseFont baseFont = (BaseFont)value;
+                if (!PdfAppearance.stdFieldFontNames.TryGetValue(baseFont.PostscriptFontName, out var value2))
+                {
+                    value2 = new PdfName(baseFont.PostscriptFontName);
+                }
+
+                PdfDictionary pdfDictionary2 = pdfDictionary.GetAsDict(PdfName.FONT);
+                if (pdfDictionary2 == null)
+                {
+                    pdfDictionary2 = new PdfDictionary();
+                    pdfDictionary.Put(PdfName.FONT, pdfDictionary2);
+                }
+
+                PdfIndirectReference pdfIndirectReference = (PdfIndirectReference)pdfDictionary2.Get(value2);
+                PdfDictionary asDict = reader.Catalog.GetAsDict(PdfName.ACROFORM);
+                MarkUsed(asDict);
+                pdfDictionary = asDict.GetAsDict(PdfName.DR);
+                if (pdfDictionary == null)
+                {
+                    pdfDictionary = new PdfDictionary();
+                    asDict.Put(PdfName.DR, pdfDictionary);
+                }
+
+                MarkUsed(pdfDictionary);
+                PdfDictionary pdfDictionary3 = pdfDictionary.GetAsDict(PdfName.FONT);
+                if (pdfDictionary3 == null)
+                {
+                    pdfDictionary3 = new PdfDictionary();
+                    pdfDictionary.Put(PdfName.FONT, pdfDictionary3);
+                }
+
+                MarkUsed(pdfDictionary3);
+                PdfIndirectReference pdfIndirectReference2 = (PdfIndirectReference)pdfDictionary3.Get(value2);
+                if (pdfIndirectReference2 != null)
+                {
+                    if (pdfIndirectReference == null)
+                    {
+                        pdfDictionary2.Put(value2, pdfIndirectReference2);
+                    }
+                }
+                else if (pdfIndirectReference == null)
+                {
+                    FontDetails fontDetails;
+                    if (baseFont.FontType == 4)
+                    {
+                        fontDetails = new FontDetails(null, ((DocumentFont)baseFont).IndirectReference, baseFont);
+                    }
+                    else
+                    {
+                        baseFont.Subset = false;
+                        fontDetails = writer.AddSimple(baseFont);
+                        localFonts[value2.ToString().Substring(1)] = baseFont;
+                    }
+
+                    pdfDictionary3.Put(value2, fontDetails.IndirectReference);
+                    pdfDictionary2.Put(value2, fontDetails.IndirectReference);
+                }
+
+                ByteBuffer internalBuffer = pdfAppearance.InternalBuffer;
+                internalBuffer.Append(value2.GetBytes()).Append(' ').Append((float)array[1])
+                    .Append(" Tf ");
+                if (array[2] != null)
+                {
+                    pdfAppearance.SetColorFill((BaseColor)array[2]);
+                }
+
+                PdfString value3 = new PdfString(pdfAppearance.ToString());
+                item.GetMerged(i).Put(PdfName.DA, value3);
+                item.GetWidget(i).Put(PdfName.DA, value3);
+                MarkUsed(item.GetWidget(i));
+            }
+        }
+        else if (Util.EqualsIgnoreCase(name, "textcolor"))
+        {
+            for (int j = 0; j < item.Size; j++)
+            {
+                if (!instHit.IsHit(j))
+                {
+                    continue;
+                }
+
+                PdfDictionary merged = item.GetMerged(j);
+                PdfString asString = merged.GetAsString(PdfName.DA);
+                if (asString != null)
+                {
+                    object[] array2 = SplitDAelements(asString.ToUnicodeString());
+                    PdfAppearance pdfAppearance2 = new PdfAppearance();
+                    if (array2[0] != null)
+                    {
+                        ByteBuffer internalBuffer2 = pdfAppearance2.InternalBuffer;
+                        internalBuffer2.Append(new PdfName((string)array2[0]).GetBytes()).Append(' ').Append((float)array2[1])
+                            .Append(" Tf ");
+                        pdfAppearance2.SetColorFill((BaseColor)value);
+                        PdfString value4 = new PdfString(pdfAppearance2.ToString());
+                        item.GetMerged(j).Put(PdfName.DA, value4);
+                        item.GetWidget(j).Put(PdfName.DA, value4);
+                        MarkUsed(item.GetWidget(j));
+                    }
+                }
+            }
+        }
+        else if (Util.EqualsIgnoreCase(name, "textsize"))
+        {
+            for (int k = 0; k < item.Size; k++)
+            {
+                if (!instHit.IsHit(k))
+                {
+                    continue;
+                }
+
+                PdfDictionary merged = item.GetMerged(k);
+                PdfString asString = merged.GetAsString(PdfName.DA);
+                if (asString == null)
+                {
+                    continue;
+                }
+
+                object[] array3 = SplitDAelements(asString.ToUnicodeString());
+                PdfAppearance pdfAppearance3 = new PdfAppearance();
+                if (array3[0] != null)
+                {
+                    ByteBuffer internalBuffer3 = pdfAppearance3.InternalBuffer;
+                    internalBuffer3.Append(new PdfName((string)array3[0]).GetBytes()).Append(' ').Append((float)value)
+                        .Append(" Tf ");
+                    if (array3[2] != null)
+                    {
+                        pdfAppearance3.SetColorFill((BaseColor)array3[2]);
+                    }
+
+                    PdfString value5 = new PdfString(pdfAppearance3.ToString());
+                    item.GetMerged(k).Put(PdfName.DA, value5);
+                    item.GetWidget(k).Put(PdfName.DA, value5);
+                    MarkUsed(item.GetWidget(k));
+                }
+            }
+        }
+        else
+        {
+            if (!Util.EqualsIgnoreCase(name, "bgcolor") && !Util.EqualsIgnoreCase(name, "bordercolor"))
+            {
+                return false;
+            }
+
+            PdfName key = (Util.EqualsIgnoreCase(name, "bgcolor") ? PdfName.BG : PdfName.BC);
+            for (int l = 0; l < item.Size; l++)
+            {
+                if (!instHit.IsHit(l))
+                {
+                    continue;
+                }
+
+                PdfDictionary merged = item.GetMerged(l);
+                PdfDictionary pdfDictionary4 = merged.GetAsDict(PdfName.MK);
+                if (pdfDictionary4 == null)
+                {
+                    if (value == null)
+                    {
+                        return true;
+                    }
+
+                    pdfDictionary4 = new PdfDictionary();
+                    item.GetMerged(l).Put(PdfName.MK, pdfDictionary4);
+                    item.GetWidget(l).Put(PdfName.MK, pdfDictionary4);
+                    MarkUsed(item.GetWidget(l));
+                }
+                else
+                {
+                    MarkUsed(pdfDictionary4);
+                }
+
+                if (value == null)
+                {
+                    pdfDictionary4.Remove(key);
+                }
+                else
+                {
+                    pdfDictionary4.Put(key, PdfAnnotation.GetMKColor((BaseColor)value));
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public virtual bool SetFieldProperty(string field, string name, int value, int[] inst)
+    {
+        if (writer == null)
+        {
+            throw new Exception(MessageLocalization.GetComposedMessage("this.acrofields.instance.is.read.only"));
+        }
+
+        if (!fields.ContainsKey(field))
+        {
+            return false;
+        }
+
+        Item item = fields[field];
+        InstHit instHit = new InstHit(inst);
+        if (Util.EqualsIgnoreCase(name, "flags"))
+        {
+            PdfNumber value2 = new PdfNumber(value);
+            for (int i = 0; i < item.Size; i++)
+            {
+                if (instHit.IsHit(i))
+                {
+                    item.GetMerged(i).Put(PdfName.F, value2);
+                    item.GetWidget(i).Put(PdfName.F, value2);
+                    MarkUsed(item.GetWidget(i));
+                }
+            }
+        }
+        else if (Util.EqualsIgnoreCase(name, "setflags"))
+        {
+            for (int j = 0; j < item.Size; j++)
+            {
+                if (instHit.IsHit(j))
+                {
+                    PdfNumber asNumber = item.GetWidget(j).GetAsNumber(PdfName.F);
+                    int num = 0;
+                    if (asNumber != null)
+                    {
+                        num = asNumber.IntValue;
+                    }
+
+                    asNumber = new PdfNumber(num | value);
+                    item.GetMerged(j).Put(PdfName.F, asNumber);
+                    item.GetWidget(j).Put(PdfName.F, asNumber);
+                    MarkUsed(item.GetWidget(j));
+                }
+            }
+        }
+        else if (Util.EqualsIgnoreCase(name, "clrflags"))
+        {
+            for (int k = 0; k < item.Size; k++)
+            {
+                if (instHit.IsHit(k))
+                {
+                    PdfDictionary widget = item.GetWidget(k);
+                    PdfNumber asNumber2 = widget.GetAsNumber(PdfName.F);
+                    int num2 = 0;
+                    if (asNumber2 != null)
+                    {
+                        num2 = asNumber2.IntValue;
+                    }
+
+                    asNumber2 = new PdfNumber(num2 & ~value);
+                    item.GetMerged(k).Put(PdfName.F, asNumber2);
+                    widget.Put(PdfName.F, asNumber2);
+                    MarkUsed(widget);
+                }
+            }
+        }
+        else if (Util.EqualsIgnoreCase(name, "fflags"))
+        {
+            PdfNumber value3 = new PdfNumber(value);
+            for (int l = 0; l < item.Size; l++)
+            {
+                if (instHit.IsHit(l))
+                {
+                    item.GetMerged(l).Put(PdfName.FF, value3);
+                    item.GetValue(l).Put(PdfName.FF, value3);
+                    MarkUsed(item.GetValue(l));
+                }
+            }
+        }
+        else if (Util.EqualsIgnoreCase(name, "setfflags"))
+        {
+            for (int m = 0; m < item.Size; m++)
+            {
+                if (instHit.IsHit(m))
+                {
+                    PdfDictionary value4 = item.GetValue(m);
+                    PdfNumber asNumber3 = value4.GetAsNumber(PdfName.FF);
+                    int num3 = 0;
+                    if (asNumber3 != null)
+                    {
+                        num3 = asNumber3.IntValue;
+                    }
+
+                    asNumber3 = new PdfNumber(num3 | value);
+                    item.GetMerged(m).Put(PdfName.FF, asNumber3);
+                    value4.Put(PdfName.FF, asNumber3);
+                    MarkUsed(value4);
+                }
+            }
+        }
+        else
+        {
+            if (!Util.EqualsIgnoreCase(name, "clrfflags"))
+            {
+                return false;
+            }
+
+            for (int n = 0; n < item.Size; n++)
+            {
+                if (instHit.IsHit(n))
+                {
+                    PdfDictionary value5 = item.GetValue(n);
+                    PdfNumber asNumber4 = value5.GetAsNumber(PdfName.FF);
+                    int num4 = 0;
+                    if (asNumber4 != null)
+                    {
+                        num4 = asNumber4.IntValue;
+                    }
+
+                    asNumber4 = new PdfNumber(num4 & ~value);
+                    item.GetMerged(n).Put(PdfName.FF, asNumber4);
+                    value5.Put(PdfName.FF, asNumber4);
+                    MarkUsed(value5);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public virtual void MergeXfaData(XmlNode n)
+    {
+        XfaForm.Xml2SomDatasets xml2SomDatasets = new XfaForm.Xml2SomDatasets(n);
+        foreach (string item in xml2SomDatasets.Order)
+        {
+            string nodeText = XfaForm.GetNodeText(xml2SomDatasets.Name2Node[item]);
+            SetField(item, nodeText);
+        }
+    }
+
+    public virtual void SetFields(FdfReader fdf)
+    {
+        Dictionary<string, PdfDictionary> dictionary = fdf.Fields;
+        foreach (string key in dictionary.Keys)
+        {
+            string fieldValue = fdf.GetFieldValue(key);
+            if (fieldValue != null)
+            {
+                SetField(key, fieldValue);
+            }
+        }
+    }
+
+    public virtual void SetFields(XfdfReader xfdf)
+    {
+        Dictionary<string, string> dictionary = xfdf.Fields;
+        foreach (string key in dictionary.Keys)
+        {
+            string fieldValue = xfdf.GetFieldValue(key);
+            if (fieldValue != null)
+            {
+                SetField(key, fieldValue);
+            }
+
+            List<string> listValues = xfdf.GetListValues(key);
+            if (listValues != null)
+            {
+                string[] value = listValues.ToArray();
+                SetListSelection(fieldValue, value);
+            }
+        }
+    }
+
+    public virtual bool RegenerateField(string name)
+    {
+        string field = GetField(name);
+        return SetField(name, field, field);
+    }
+
+    public virtual bool SetField(string name, string value)
+    {
+        return SetField(name, value, null);
+    }
+
+    public virtual bool SetField(string name, string value, bool saveAppearance)
+    {
+        return SetField(name, value, null, saveAppearance);
+    }
+
+    public virtual bool SetFieldRichValue(string name, string richValue)
+    {
+        if (writer == null)
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("this.acrofields.instance.is.read.only"));
+        }
+
+        Item fieldItem = GetFieldItem(name);
+        if (fieldItem == null)
+        {
+            return false;
+        }
+
+        if (GetFieldType(name) != 4)
+        {
+            return false;
+        }
+
+        PdfDictionary merged = fieldItem.GetMerged(0);
+        PdfNumber asNumber = merged.GetAsNumber(PdfName.FF);
+        int num = 0;
+        if (asNumber != null)
+        {
+            num = asNumber.IntValue;
+        }
+
+        if ((num & 0x2000000) == 0)
+        {
+            return false;
+        }
+
+        PdfString value = new PdfString(richValue);
+        fieldItem.WriteToAll(PdfName.RV, value, 5);
+        Stream isp = new MemoryStream(Encoding.Default.GetBytes(richValue));
+        PdfString value2 = new PdfString(XmlToTxt.Parse(isp));
+        fieldItem.WriteToAll(PdfName.V, value2, 5);
+        return true;
+    }
+
+    public virtual bool SetField(string name, string value, string display)
+    {
+        return SetField(name, value, saveAppearance: false);
+    }
+
+    public virtual bool SetField(string name, string value, string display, bool saveAppearance)
+    {
+        if (writer == null)
+        {
+            throw new DocumentException(MessageLocalization.GetComposedMessage("this.acrofields.instance.is.read.only"));
+        }
+
+        if (xfa.XfaPresent)
+        {
+            name = xfa.FindFieldName(name, this);
+            if (name == null)
+            {
+                return false;
+            }
+
+            string shortName = XfaForm.Xml2Som.GetShortName(name);
+            XmlNode xmlNode = xfa.FindDatasetsNode(shortName);
+            if (xmlNode == null)
+            {
+                xmlNode = xfa.DatasetsSom.InsertNode(xfa.DatasetsNode, shortName);
+            }
+
+            xfa.SetNodeText(xmlNode, value);
+        }
+
+        if (!fields.ContainsKey(name))
+        {
+            return false;
+        }
+
+        Item item = fields[name];
+        PdfDictionary merged = item.GetMerged(0);
+        PdfName asName = merged.GetAsName(PdfName.FT);
+        if (PdfName.TX.Equals(asName))
+        {
+            PdfNumber asNumber = merged.GetAsNumber(PdfName.MAXLEN);
+            int num = 0;
+            if (asNumber != null)
+            {
+                num = asNumber.IntValue;
+            }
+
+            if (num > 0)
+            {
+                value = value.Substring(0, Math.Min(num, value.Length));
+            }
+        }
+
+        if (display == null)
+        {
+            display = value;
+        }
+
+        if (PdfName.TX.Equals(asName) || PdfName.CH.Equals(asName))
+        {
+            PdfString value2 = new PdfString(value, "UnicodeBig");
+            for (int i = 0; i < item.Size; i++)
+            {
+                PdfDictionary value3 = item.GetValue(i);
+                value3.Put(PdfName.V, value2);
+                value3.Remove(PdfName.I);
+                MarkUsed(value3);
+                merged = item.GetMerged(i);
+                merged.Remove(PdfName.I);
+                merged.Put(PdfName.V, value2);
+                PdfDictionary widget = item.GetWidget(i);
+                if (generateAppearances)
+                {
+                    PdfAppearance appearance = GetAppearance(merged, display, name);
+                    if (PdfName.CH.Equals(asName))
+                    {
+                        PdfNumber value4 = new PdfNumber(topFirst);
+                        widget.Put(PdfName.TI, value4);
+                        merged.Put(PdfName.TI, value4);
+                    }
+
+                    PdfDictionary pdfDictionary = widget.GetAsDict(PdfName.AP);
+                    if (pdfDictionary == null)
+                    {
+                        pdfDictionary = new PdfDictionary();
+                        widget.Put(PdfName.AP, pdfDictionary);
+                        merged.Put(PdfName.AP, pdfDictionary);
+                    }
+
+                    pdfDictionary.Put(PdfName.N, appearance.IndirectReference);
+                    writer.ReleaseTemplate(appearance);
+                }
+                else
+                {
+                    widget.Remove(PdfName.AP);
+                    merged.Remove(PdfName.AP);
+                }
+
+                MarkUsed(widget);
+            }
+
+            return true;
+        }
+
+        if (PdfName.BTN.Equals(asName))
+        {
+            PdfNumber asNumber2 = item.GetMerged(0).GetAsNumber(PdfName.FF);
+            int num2 = 0;
+            if (asNumber2 != null)
+            {
+                num2 = asNumber2.IntValue;
+            }
+
+            if (((uint)num2 & 0x10000u) != 0)
+            {
+                Image instance;
+                try
+                {
+                    instance = Image.GetInstance(Convert.FromBase64String(value));
+                }
+                catch
+                {
+                    return false;
+                }
+
+                PushbuttonField newPushbuttonFromField = GetNewPushbuttonFromField(name);
+                newPushbuttonFromField.Image = instance;
+                ReplacePushbuttonField(name, newPushbuttonFromField.Field);
+                return true;
+            }
+
+            PdfName pdfName = new PdfName(value);
+            List<string> list = new List<string>();
+            PdfArray asArray = item.GetValue(0).GetAsArray(PdfName.OPT);
+            if (asArray != null)
+            {
+                for (int j = 0; j < asArray.Size; j++)
+                {
+                    PdfString asString = asArray.GetAsString(j);
+                    if (asString != null)
+                    {
+                        list.Add(asString.ToUnicodeString());
+                    }
+                    else
+                    {
+                        list.Add(null);
+                    }
+                }
+            }
+
+            int num3 = list.IndexOf(value);
+            PdfName pdfName2 = ((num3 < 0) ? pdfName : new PdfName(num3.ToString()));
+            for (int k = 0; k < item.Size; k++)
+            {
+                merged = item.GetMerged(k);
+                PdfDictionary widget2 = item.GetWidget(k);
+                PdfDictionary value5 = item.GetValue(k);
+                MarkUsed(item.GetValue(k));
+                value5.Put(PdfName.V, pdfName2);
+                merged.Put(PdfName.V, pdfName2);
+                MarkUsed(widget2);
+                PdfDictionary asDict = widget2.GetAsDict(PdfName.AP);
+                if (asDict == null)
+                {
+                    return false;
+                }
+
+                PdfDictionary asDict2 = asDict.GetAsDict(PdfName.N);
+                if (IsInAP(asDict2, pdfName2) || asDict2 == null)
+                {
+                    merged.Put(PdfName.AS, pdfName2);
+                    widget2.Put(PdfName.AS, pdfName2);
+                }
+                else
+                {
+                    merged.Put(PdfName.AS, PdfName.Off_);
+                    widget2.Put(PdfName.AS, PdfName.Off_);
+                }
+
+                if (generateAppearances && !saveAppearance)
+                {
+                    PdfAppearance appearance2 = GetAppearance(merged, display, name);
+                    if (asDict2 != null)
+                    {
+                        asDict2.Put(merged.GetAsName(PdfName.AS), appearance2.IndirectReference);
+                    }
+                    else
+                    {
+                        asDict.Put(PdfName.N, appearance2.IndirectReference);
+                    }
+
+                    writer.ReleaseTemplate(appearance2);
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    public virtual bool SetListSelection(string name, string[] value)
+    {
+        Item fieldItem = GetFieldItem(name);
+        if (fieldItem == null)
+        {
+            return false;
+        }
+
+        PdfDictionary merged = fieldItem.GetMerged(0);
+        PdfName asName = merged.GetAsName(PdfName.FT);
+        if (!PdfName.CH.Equals(asName))
+        {
+            return false;
+        }
+
+        string[] listOptionExport = GetListOptionExport(name);
+        PdfArray pdfArray = new PdfArray();
+        foreach (string value2 in value)
+        {
+            for (int j = 0; j < listOptionExport.Length; j++)
+            {
+                if (listOptionExport[j].Equals(value2))
+                {
+                    pdfArray.Add(new PdfNumber(j));
+                }
+            }
+        }
+
+        fieldItem.WriteToAll(PdfName.I, pdfArray, 5);
+        PdfArray pdfArray2 = new PdfArray();
+        for (int k = 0; k < value.Length; k++)
+        {
+            pdfArray2.Add(new PdfString(value[k]));
+        }
+
+        fieldItem.WriteToAll(PdfName.V, pdfArray2, 5);
+        PdfAppearance appearance = GetAppearance(merged, value, name);
+        PdfDictionary pdfDictionary = new PdfDictionary();
+        pdfDictionary.Put(PdfName.N, appearance.IndirectReference);
+        fieldItem.WriteToAll(PdfName.AP, pdfDictionary, 3);
+        writer.ReleaseTemplate(appearance);
+        fieldItem.MarkUsed(this, 6);
+        return true;
+    }
+
+    internal bool IsInAP(PdfDictionary nDic, PdfName check)
+    {
+        if (nDic != null)
+        {
+            return nDic.Get(check) != null;
+        }
+
+        return false;
+    }
+
+    public virtual Item GetFieldItem(string name)
+    {
+        if (xfa.XfaPresent)
+        {
+            name = xfa.FindFieldName(name, this);
+            if (name == null)
+            {
+                return null;
+            }
+        }
+
+        if (!fields.ContainsKey(name))
+        {
+            return null;
+        }
+
+        return fields[name];
+    }
+
+    public virtual string GetTranslatedFieldName(string name)
+    {
+        if (xfa.XfaPresent)
+        {
+            string text = xfa.FindFieldName(name, this);
+            if (text != null)
+            {
+                name = text;
+            }
+        }
+
+        return name;
+    }
+
+    public virtual IList<FieldPosition> GetFieldPositions(string name)
+    {
+        Item fieldItem = GetFieldItem(name);
+        if (fieldItem == null)
+        {
+            return null;
+        }
+
+        List<FieldPosition> list = new List<FieldPosition>();
+        for (int i = 0; i < fieldItem.Size; i++)
+        {
+            try
+            {
+                PdfDictionary widget = fieldItem.GetWidget(i);
+                PdfArray asArray = widget.GetAsArray(PdfName.RECT);
+                if (asArray == null)
+                {
+                    continue;
+                }
+
+                Rectangle rectangle = PdfReader.GetNormalizedRectangle(asArray);
+                int page = fieldItem.GetPage(i);
+                int pageRotation = reader.GetPageRotation(page);
+                FieldPosition fieldPosition = new FieldPosition();
+                fieldPosition.page = page;
+                if (pageRotation != 0)
+                {
+                    Rectangle pageSize = reader.GetPageSize(page);
+                    switch (pageRotation)
+                    {
+                        case 270:
+                            rectangle = new Rectangle(pageSize.Top - rectangle.Bottom, rectangle.Left, pageSize.Top - rectangle.Top, rectangle.Right);
+                            break;
+                        case 180:
+                            rectangle = new Rectangle(pageSize.Right - rectangle.Left, pageSize.Top - rectangle.Bottom, pageSize.Right - rectangle.Right, pageSize.Top - rectangle.Top);
+                            break;
+                        case 90:
+                            rectangle = new Rectangle(rectangle.Bottom, pageSize.Right - rectangle.Left, rectangle.Top, pageSize.Right - rectangle.Right);
+                            break;
+                    }
+
+                    rectangle.Normalize();
+                }
+
+                fieldPosition.position = rectangle;
+                list.Add(fieldPosition);
+            }
+            catch
+            {
+            }
+        }
+
+        return list;
+    }
+
+    private int RemoveRefFromArray(PdfArray array, PdfObject refo)
+    {
+        if (refo == null || !refo.IsIndirect())
+        {
+            return array.Size;
+        }
+
+        PdfIndirectReference pdfIndirectReference = (PdfIndirectReference)refo;
+        for (int i = 0; i < array.Size; i++)
+        {
+            PdfObject pdfObject = array.GetPdfObject(i);
+            if (pdfObject.IsIndirect() && ((PdfIndirectReference)pdfObject).Number == pdfIndirectReference.Number)
+            {
+                array.Remove(i--);
+            }
+        }
+
+        return array.Size;
+    }
+
+    public virtual bool RemoveFieldsFromPage(int page)
+    {
+        if (page < 1)
+        {
+            return false;
+        }
+
+        string[] array = new string[fields.Count];
+        fields.Keys.CopyTo(array, 0);
+        bool flag = false;
+        for (int i = 0; i < array.Length; i++)
+        {
+            bool flag2 = RemoveField(array[i], page);
+            flag = flag || flag2;
+        }
+
+        return flag;
+    }
+
+    public virtual bool RemoveField(string name, int page)
+    {
+        Item fieldItem = GetFieldItem(name);
+        if (fieldItem == null)
+        {
+            return false;
+        }
+
+        PdfDictionary pdfDictionary = (PdfDictionary)PdfReader.GetPdfObject(reader.Catalog.Get(PdfName.ACROFORM), reader.Catalog);
+        if (pdfDictionary == null)
+        {
+            return false;
+        }
+
+        PdfArray asArray = pdfDictionary.GetAsArray(PdfName.FIELDS);
+        if (asArray == null)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < fieldItem.Size; i++)
+        {
+            int page2 = fieldItem.GetPage(i);
+            if (page != -1 && page != page2)
+            {
+                continue;
+            }
+
+            PdfIndirectReference widgetRef = fieldItem.GetWidgetRef(i);
+            PdfDictionary pdfDictionary2 = fieldItem.GetWidget(i);
+            PdfDictionary pageN = reader.GetPageN(page2);
+            PdfArray asArray2 = pageN.GetAsArray(PdfName.ANNOTS);
+            if (asArray2 != null)
+            {
+                if (RemoveRefFromArray(asArray2, widgetRef) == 0)
+                {
+                    pageN.Remove(PdfName.ANNOTS);
+                    MarkUsed(pageN);
+                }
+                else
+                {
+                    MarkUsed(asArray2);
+                }
+            }
+
+            PdfReader.KillIndirect(widgetRef);
+            PdfIndirectReference refo = widgetRef;
+            while ((widgetRef = pdfDictionary2.GetAsIndirectObject(PdfName.PARENT)) != null)
+            {
+                pdfDictionary2 = pdfDictionary2.GetAsDict(PdfName.PARENT);
+                PdfArray asArray3 = pdfDictionary2.GetAsArray(PdfName.KIDS);
+                if (RemoveRefFromArray(asArray3, refo) != 0)
+                {
+                    break;
+                }
+
+                refo = widgetRef;
+                PdfReader.KillIndirect(widgetRef);
+            }
+
+            if (widgetRef == null)
+            {
+                RemoveRefFromArray(asArray, refo);
+                MarkUsed(asArray);
+            }
+
+            if (page != -1)
+            {
+                fieldItem.Remove(i);
+                i--;
+            }
+        }
+
+        if (page == -1 || fieldItem.Size == 0)
+        {
+            fields.Remove(name);
+        }
+
+        return true;
+    }
+
+    public virtual bool RemoveField(string name)
+    {
+        return RemoveField(name, -1);
+    }
+
+    public virtual bool ClearSignatureField(string name)
+    {
+        sigNames = null;
+        FindSignatureNames();
+        if (!sigNames.ContainsKey(name))
+        {
+            return false;
+        }
+
+        Item item = fields[name];
+        item.MarkUsed(this, 6);
+        int size = item.Size;
+        for (int i = 0; i < size; i++)
+        {
+            ClearSigDic(item.GetMerged(i));
+            ClearSigDic(item.GetWidget(i));
+            ClearSigDic(item.GetValue(i));
+        }
+
+        return true;
+    }
+
+    private static void ClearSigDic(PdfDictionary dic)
+    {
+        dic.Remove(PdfName.AP);
+        dic.Remove(PdfName.AS);
+        dic.Remove(PdfName.V);
+        dic.Remove(PdfName.DV);
+        dic.Remove(PdfName.SV);
+        dic.Remove(PdfName.FF);
+        dic.Put(PdfName.F, new PdfNumber(4));
+    }
+
+    private void FindSignatureNames()
+    {
+        if (sigNames != null)
+        {
+            return;
+        }
+
+        sigNames = new Dictionary<string, int[]>();
+        orderedSignatureNames = new List<string>();
+        List<object[]> list = new List<object[]>();
+        foreach (KeyValuePair<string, Item> field in fields)
+        {
+            Item value = field.Value;
+            PdfDictionary merged = value.GetMerged(0);
+            if (!PdfName.SIG.Equals(merged.Get(PdfName.FT)))
+            {
+                continue;
+            }
+
+            PdfDictionary asDict = merged.GetAsDict(PdfName.V);
+            if (asDict == null)
+            {
+                continue;
+            }
+
+            PdfString asString = asDict.GetAsString(PdfName.CONTENTS);
+            if (asString == null)
+            {
+                continue;
+            }
+
+            PdfArray asArray = asDict.GetAsArray(PdfName.BYTERANGE);
+            if (asArray != null)
+            {
+                int size = asArray.Size;
+                if (size >= 2)
+                {
+                    int num = asArray.GetAsNumber(size - 1).IntValue + asArray.GetAsNumber(size - 2).IntValue;
+                    list.Add(new object[2]
+                    {
+                        field.Key,
+                        new int[2] { num, 0 }
+                    });
+                }
+            }
+        }
+
+        list.Sort(new ISorterComparator());
+        if (list.Count > 0)
+        {
+            if (((int[])list[list.Count - 1][1])[0] == reader.FileLength)
+            {
+                totalRevisions = list.Count;
+            }
+            else
+            {
+                totalRevisions = list.Count + 1;
+            }
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                object[] array = list[i];
+                string text = (string)array[0];
+                int[] array2 = (int[])array[1];
+                array2[1] = i + 1;
+                sigNames[text] = array2;
+                orderedSignatureNames.Add(text);
+            }
+        }
+    }
+
+    public virtual List<string> GetSignatureNames()
+    {
+        FindSignatureNames();
+        return new List<string>(orderedSignatureNames);
+    }
+
+    public virtual List<string> GetBlankSignatureNames()
+    {
+        FindSignatureNames();
+        List<string> list = new List<string>();
+        foreach (KeyValuePair<string, Item> field in fields)
+        {
+            Item value = field.Value;
+            PdfDictionary merged = value.GetMerged(0);
+            if (PdfName.SIG.Equals(merged.GetAsName(PdfName.FT)) && !sigNames.ContainsKey(field.Key))
+            {
+                list.Add(field.Key);
+            }
+        }
+
+        return list;
+    }
+
+    public virtual PdfDictionary GetSignatureDictionary(string name)
+    {
+        FindSignatureNames();
+        name = GetTranslatedFieldName(name);
+        if (!sigNames.ContainsKey(name))
+        {
+            return null;
+        }
+
+        Item item = fields[name];
+        PdfDictionary merged = item.GetMerged(0);
+        return merged.GetAsDict(PdfName.V);
+    }
+
+    public virtual PdfIndirectReference GetNormalAppearance(string name)
+    {
+        GetSignatureNames();
+        name = GetTranslatedFieldName(name);
+        Item item = fields[name];
+        if (item == null)
+        {
+            return null;
+        }
+
+        PdfDictionary merged = item.GetMerged(0);
+        PdfDictionary asDict = merged.GetAsDict(PdfName.AP);
+        if (asDict == null)
+        {
+            return null;
+        }
+
+        PdfIndirectReference asIndirectObject = asDict.GetAsIndirectObject(PdfName.N);
+        if (asIndirectObject == null)
+        {
+            return null;
+        }
+
+        return asIndirectObject;
+    }
+
+    public virtual bool SignatureCoversWholeDocument(string name)
+    {
+        FindSignatureNames();
+        name = GetTranslatedFieldName(name);
+        if (!sigNames.ContainsKey(name))
+        {
+            return false;
+        }
+
+        return sigNames[name][0] == reader.FileLength;
+    }
+
+    public virtual PdfPKCS7 VerifySignature(string name)
+    {
+        PdfDictionary signatureDictionary = GetSignatureDictionary(name);
+        if (signatureDictionary == null)
+        {
+            return null;
+        }
+
+        PdfName asName = signatureDictionary.GetAsName(PdfName.SUBFILTER);
+        PdfString asString = signatureDictionary.GetAsString(PdfName.CONTENTS);
+        PdfPKCS7 pdfPKCS = null;
+        if (asName.Equals(PdfName.ADBE_X509_RSA_SHA1))
+        {
+            PdfString asString2 = signatureDictionary.GetAsString(PdfName.CERT);
+            if (asString2 == null)
+            {
+                asString2 = signatureDictionary.GetAsArray(PdfName.CERT).GetAsString(0);
+            }
+
+            pdfPKCS = new PdfPKCS7(asString.GetOriginalBytes(), asString2.GetBytes());
+        }
+        else
+        {
+            pdfPKCS = new PdfPKCS7(asString.GetOriginalBytes(), asName);
+        }
+
+        UpdateByteRange(pdfPKCS, signatureDictionary);
+        PdfString asString3 = signatureDictionary.GetAsString(PdfName.M);
+        if (asString3 != null)
+        {
+            pdfPKCS.SignDate = PdfDate.Decode(asString3.ToString());
+        }
+
+        PdfObject pdfObject = PdfReader.GetPdfObject(signatureDictionary.Get(PdfName.NAME));
+        if (pdfObject != null)
+        {
+            if (pdfObject.IsString())
+            {
+                pdfPKCS.SignName = ((PdfString)pdfObject).ToUnicodeString();
+            }
+            else if (pdfObject.IsName())
+            {
+                pdfPKCS.SignName = PdfName.DecodeName(pdfObject.ToString());
+            }
+        }
+
+        asString3 = signatureDictionary.GetAsString(PdfName.REASON);
+        if (asString3 != null)
+        {
+            pdfPKCS.Reason = asString3.ToUnicodeString();
+        }
+
+        asString3 = signatureDictionary.GetAsString(PdfName.LOCATION);
+        if (asString3 != null)
+        {
+            pdfPKCS.Location = asString3.ToUnicodeString();
+        }
+
+        return pdfPKCS;
+    }
+
+    private void UpdateByteRange(PdfPKCS7 pkcs7, PdfDictionary v)
+    {
+        PdfArray asArray = v.GetAsArray(PdfName.BYTERANGE);
+        RandomAccessFileOrArray safeFile = reader.SafeFile;
+        Stream stream = null;
+        try
+        {
+            stream = new RASInputStream(new RandomAccessSourceFactory().CreateRanged(safeFile.CreateSourceView(), asArray.AsLongArray()));
+            byte[] array = new byte[8192];
+            int len;
+            while ((len = stream.Read(array, 0, array.Length)) > 0)
+            {
+                pkcs7.Update(array, 0, len);
+            }
+        }
+        finally
+        {
+            stream?.Close();
+        }
+    }
+
+    public virtual int GetRevision(string field)
+    {
+        FindSignatureNames();
+        field = GetTranslatedFieldName(field);
+        if (!sigNames.ContainsKey(field))
+        {
+            return 0;
+        }
+
+        return sigNames[field][1];
+    }
+
+    public virtual Stream ExtractRevision(string field)
+    {
+        FindSignatureNames();
+        field = GetTranslatedFieldName(field);
+        if (!sigNames.ContainsKey(field))
+        {
+            return null;
+        }
+
+        int num = sigNames[field][0];
+        RandomAccessFileOrArray safeFile = reader.SafeFile;
+        safeFile.ReOpen();
+        safeFile.Seek(0);
+        return new RASInputStream(new WindowRandomAccessSource(safeFile.CreateSourceView(), 0L, num));
+    }
+
+    private void MarkUsed(PdfObject obj)
+    {
+        if (append)
+        {
+            ((PdfStamperImp)writer).MarkUsed(obj);
+        }
+    }
+
+    public virtual void SetExtraMargin(float extraMarginLeft, float extraMarginTop)
+    {
+        this.extraMarginLeft = extraMarginLeft;
+        this.extraMarginTop = extraMarginTop;
+    }
+
+    public virtual void AddSubstitutionFont(BaseFont font)
+    {
+        if (substitutionFonts == null)
+        {
+            substitutionFonts = new List<BaseFont>();
+        }
+
+        substitutionFonts.Add(font);
+    }
+
+    static AcroFields()
+    {
+        stdFieldFontNames = new Dictionary<string, string[]>();
+        buttonRemove = new PdfName[6]
+        {
+            PdfName.MK,
+            PdfName.F,
+            PdfName.FF,
+            PdfName.Q,
+            PdfName.BS,
+            PdfName.BORDER
+        };
+        stdFieldFontNames["CoBO"] = new string[1] { "Courier-BoldOblique" };
+        stdFieldFontNames["CoBo"] = new string[1] { "Courier-Bold" };
+        stdFieldFontNames["CoOb"] = new string[1] { "Courier-Oblique" };
+        stdFieldFontNames["Cour"] = new string[1] { "Courier" };
+        stdFieldFontNames["HeBO"] = new string[1] { "Helvetica-BoldOblique" };
+        stdFieldFontNames["HeBo"] = new string[1] { "Helvetica-Bold" };
+        stdFieldFontNames["HeOb"] = new string[1] { "Helvetica-Oblique" };
+        stdFieldFontNames["Helv"] = new string[1] { "Helvetica" };
+        stdFieldFontNames["Symb"] = new string[1] { "Symbol" };
+        stdFieldFontNames["TiBI"] = new string[1] { "Times-BoldItalic" };
+        stdFieldFontNames["TiBo"] = new string[1] { "Times-Bold" };
+        stdFieldFontNames["TiIt"] = new string[1] { "Times-Italic" };
+        stdFieldFontNames["TiRo"] = new string[1] { "Times-Roman" };
+        stdFieldFontNames["ZaDb"] = new string[1] { "ZapfDingbats" };
+        stdFieldFontNames["HySm"] = new string[2] { "HYSMyeongJo-Medium", "UniKS-UCS2-H" };
+        stdFieldFontNames["HyGo"] = new string[2] { "HYGoThic-Medium", "UniKS-UCS2-H" };
+        stdFieldFontNames["KaGo"] = new string[2] { "HeiseiKakuGo-W5", "UniKS-UCS2-H" };
+        stdFieldFontNames["KaMi"] = new string[2] { "HeiseiMin-W3", "UniJIS-UCS2-H" };
+        stdFieldFontNames["MHei"] = new string[2] { "MHei-Medium", "UniCNS-UCS2-H" };
+        stdFieldFontNames["MSun"] = new string[2] { "MSung-Light", "UniCNS-UCS2-H" };
+        stdFieldFontNames["STSo"] = new string[2] { "STSong-Light", "UniGB-UCS2-H" };
+    }
+
+    public virtual void RemoveXfa()
+    {
+        PdfDictionary catalog = reader.Catalog;
+        PdfDictionary asDict = catalog.GetAsDict(PdfName.ACROFORM);
+        asDict.Remove(PdfName.XFA);
+        xfa = new XfaForm(reader);
+    }
+
+    public virtual PushbuttonField GetNewPushbuttonFromField(string field)
+    {
+        return GetNewPushbuttonFromField(field, 0);
+    }
+
+    public virtual PushbuttonField GetNewPushbuttonFromField(string field, int order)
+    {
+        if (GetFieldType(field) != 1)
+        {
+            return null;
+        }
+
+        Item fieldItem = GetFieldItem(field);
+        if (order >= fieldItem.Size)
+        {
+            return null;
+        }
+
+        IList<FieldPosition> fieldPositions = GetFieldPositions(field);
+        Rectangle position = fieldPositions[order].position;
+        PushbuttonField pushbuttonField = new PushbuttonField(writer, position, null);
+        PdfDictionary merged = fieldItem.GetMerged(order);
+        DecodeGenericDictionary(merged, pushbuttonField);
+        PdfDictionary asDict = merged.GetAsDict(PdfName.MK);
+        if (asDict != null)
+        {
+            PdfString asString = asDict.GetAsString(PdfName.CA);
+            if (asString != null)
+            {
+                pushbuttonField.Text = asString.ToUnicodeString();
+            }
+
+            PdfNumber asNumber = asDict.GetAsNumber(PdfName.TP);
+            if (asNumber != null)
+            {
+                pushbuttonField.Layout = asNumber.IntValue + 1;
+            }
+
+            PdfDictionary asDict2 = asDict.GetAsDict(PdfName.IF);
+            if (asDict2 != null)
+            {
+                PdfName asName = asDict2.GetAsName(PdfName.SW);
+                if (asName != null)
+                {
+                    int scaleIcon = 1;
+                    if (asName.Equals(PdfName.B))
+                    {
+                        scaleIcon = 3;
+                    }
+                    else if (asName.Equals(PdfName.S))
+                    {
+                        scaleIcon = 4;
+                    }
+                    else if (asName.Equals(PdfName.N))
+                    {
+                        scaleIcon = 2;
+                    }
+
+                    pushbuttonField.ScaleIcon = scaleIcon;
+                }
+
+                asName = asDict2.GetAsName(PdfName.S);
+                if (asName != null && asName.Equals(PdfName.A))
+                {
+                    pushbuttonField.ProportionalIcon = false;
+                }
+
+                PdfArray asArray = asDict2.GetAsArray(PdfName.A);
+                if (asArray != null && asArray.Size == 2)
+                {
+                    float floatValue = asArray.GetAsNumber(0).FloatValue;
+                    float floatValue2 = asArray.GetAsNumber(1).FloatValue;
+                    pushbuttonField.IconHorizontalAdjustment = floatValue;
+                    pushbuttonField.IconVerticalAdjustment = floatValue2;
+                }
+
+                PdfBoolean asBoolean = asDict2.GetAsBoolean(PdfName.FB);
+                if (asBoolean != null && asBoolean.BooleanValue)
+                {
+                    pushbuttonField.IconFitToBounds = true;
+                }
+            }
+
+            PdfObject pdfObject = asDict.Get(PdfName.I);
+            if (pdfObject != null && pdfObject.IsIndirect())
+            {
+                pushbuttonField.IconReference = (PRIndirectReference)pdfObject;
+            }
+        }
+
+        return pushbuttonField;
+    }
+
+    public virtual bool ReplacePushbuttonField(string field, PdfFormField button)
+    {
+        return ReplacePushbuttonField(field, button, 0);
+    }
+
+    public virtual bool ReplacePushbuttonField(string field, PdfFormField button, int order)
+    {
+        if (GetFieldType(field) != 1)
+        {
+            return false;
+        }
+
+        Item fieldItem = GetFieldItem(field);
+        if (order >= fieldItem.Size)
+        {
+            return false;
+        }
+
+        PdfDictionary merged = fieldItem.GetMerged(order);
+        PdfDictionary value = fieldItem.GetValue(order);
+        PdfDictionary widget = fieldItem.GetWidget(order);
+        for (int i = 0; i < buttonRemove.Length; i++)
+        {
+            merged.Remove(buttonRemove[i]);
+            value.Remove(buttonRemove[i]);
+            widget.Remove(buttonRemove[i]);
+        }
+
+        foreach (PdfName key in button.Keys)
+        {
+            if (!key.Equals(PdfName.T))
+            {
+                if (key.Equals(PdfName.FF))
+                {
+                    value.Put(key, button.Get(key));
+                }
+                else
+                {
+                    widget.Put(key, button.Get(key));
+                }
+
+                merged.Put(key, button.Get(key));
+                MarkUsed(value);
+                MarkUsed(widget);
+            }
+        }
+
+        return true;
+    }
+
+    public virtual bool DoesSignatureFieldExist(string name)
+    {
+        if (!GetBlankSignatureNames().Contains(name))
+        {
+            return GetSignatureNames().Contains(name);
+        }
+
+        return true;
+    }
+}
+#if false // Registro de descompilación
+"27" elementos en caché
+------------------
+Resolver: "mscorlib, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll"
+------------------
+Resolver: "System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll"
+------------------
+Resolver: "System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+No se pudo encontrar por el nombre "System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+------------------
+Resolver: "System.Xml, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "System.Xml, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+AVISO: No coinciden las versiones. Se esperaba "2.0.0.0", se obtuvo "4.0.0.0"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xml.dll"
+------------------
+Resolver: "System.Security, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+No se pudo encontrar por el nombre "System.Security, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+------------------
+Resolver: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Se encontró un solo ensamblado: "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+Cargar desde: "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll"
+#endif
+
+
