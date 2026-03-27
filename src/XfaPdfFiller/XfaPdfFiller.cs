@@ -57,18 +57,13 @@ namespace XfaPdfFiller
             XmlNode datasetsNode = FindOrCreateDatasetsNode(xfaDoc);
             InjectDataIntoDatasets(xfaDoc, datasetsNode, inputNode);
 
-            // 5. Remove /Perms from Catalog if present (usage rights signature
-            //    becomes invalid after modification, same as iTextSharp does)
-            bool catalogModified = false;
-            if (catalogDict != null && catalogDict.Entries.ContainsKey("Perms"))
-            {
-                catalogDict.Entries.Remove("Perms");
-                catalogModified = true;
-            }
-
-            // 6. Write the modified PDF with incremental update
+            // 5. Write the modified PDF with incremental update.
+            //    Do NOT modify the Catalog or remove /Perms. The Reader Extensions
+            //    (usage rights signature) remain valid in append/incremental mode
+            //    because the UR signature covers the original revision. This preserves
+            //    save rights in Adobe Reader, matching iTextSharp's behavior.
             return WriteModifiedPdf(reader, xfa, xfaDoc, acroFormDict!, acroFormObjNum,
-                                    catalogModified ? catalogDict : null, catalogObjNum);
+                                    null, catalogObjNum);
         }
 
         /// <summary>
