@@ -862,14 +862,32 @@ namespace XfaPdfFiller
 
         public static byte[] FlateCompress(byte[] data)
         {
-            // Write raw deflate (no zlib wrapper) for maximum compatibility
-            // PDF readers handle both raw deflate and zlib-wrapped
+            // PDF spec (ISO 32000-1 §7.4.4) requires zlib format (RFC 1950)
+            // for FlateDecode: 2-byte header + deflate data + 4-byte Adler-32
             using (var output = new MemoryStream())
             {
+                // Zlib header: CMF=0x78 (deflate, 32K window), FLG=0x9C (level 2, no dict, check bits)
+                output.WriteByte(0x78);
+                output.WriteByte(0x9C);
+
                 using (var deflate = new DeflateStream(output, CompressionLevel.Optimal, leaveOpen: true))
                 {
                     deflate.Write(data, 0, data.Length);
                 }
+
+                // Adler-32 checksum (big-endian)
+                uint a = 1, b = 0;
+                foreach (byte d in data)
+                {
+                    a = (a + d) % 65521;
+                    b = (b + a) % 65521;
+                }
+                uint adler = (b << 16) | a;
+                output.WriteByte((byte)(adler >> 24));
+                output.WriteByte((byte)(adler >> 16));
+                output.WriteByte((byte)(adler >> 8));
+                output.WriteByte((byte)(adler));
+
                 return output.ToArray();
             }
         }
