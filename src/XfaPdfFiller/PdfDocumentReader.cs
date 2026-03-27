@@ -136,8 +136,12 @@ namespace XfaPdfFiller
             if (dictObj is not PdfDictionary dict)
                 throw new InvalidOperationException("Expected dictionary for xref stream");
 
-            // Read the stream data
-            byte[] streamData = ReadStreamData(dict);
+            // Find stream data using robust byte scanning
+            int streamStart = FindStreamKeyword(_tokenizer.Position);
+            if (streamStart < 0)
+                throw new InvalidOperationException("Cannot find stream keyword in xref stream object");
+            _tokenizer.Position = streamStart;
+            byte[] streamData = ReadStreamDataDirect(dict);
             byte[] decompressed = DecompressStream(dict, streamData);
 
             // The xref stream dictionary IS the trailer
@@ -257,27 +261,52 @@ namespace XfaPdfFiller
             // Check if it's followed by a stream
             if (value is PdfDictionary dict)
             {
-                _tokenizer.SkipWhitespaceAndComments();
-                int savedPos = _tokenizer.Position;
-                token = _tokenizer.NextToken();
-                if (token.Type == PdfTokenType.Keyword && token.Value == "stream")
+                int streamStart = FindStreamKeyword(_tokenizer.Position);
+                if (streamStart >= 0)
                 {
-                    // Skip EOL after "stream" keyword (CR, LF, or CRLF)
-                    if (_tokenizer.Position < _data.Length && _data[_tokenizer.Position] == '\r')
-                        _tokenizer.Position++;
-                    if (_tokenizer.Position < _data.Length && _data[_tokenizer.Position] == '\n')
-                        _tokenizer.Position++;
-
+                    _tokenizer.Position = streamStart;
                     byte[] streamData = ReadStreamDataDirect(dict);
                     var stream = new PdfStream(dict, streamData);
                     _objectCache[objNum] = stream;
                     return stream;
                 }
-                _tokenizer.Position = savedPos;
             }
 
             _objectCache[objNum] = value;
             return value;
+        }
+
+        // Scan forward from current position to find "stream" keyword followed by EOL.
+        // Returns the position right after the EOL (start of stream data), or -1 if not found.
+        private int FindStreamKeyword(int fromPos)
+        {
+            // Only scan a limited range - "stream" should be very close after ">>"
+            int maxScan = Math.Min(fromPos + 32, _data.Length - 6);
+            for (int i = fromPos; i < maxScan; i++)
+            {
+                if (_data[i] == 's' && i + 6 <= _data.Length &&
+                    _data[i + 1] == 't' && _data[i + 2] == 'r' &&
+                    _data[i + 3] == 'e' && _data[i + 4] == 'a' && _data[i + 5] == 'm')
+                {
+                    // Make sure it's not "endstream"
+                    if (i > 0 && _data[i - 1] == 'd')
+                        continue;
+
+                    int pos = i + 6;
+                    // Skip EOL: CR, LF, or CRLF
+                    if (pos < _data.Length && _data[pos] == '\r') pos++;
+                    if (pos < _data.Length && _data[pos] == '\n') pos++;
+                    return pos;
+                }
+                // Stop if we hit "endobj" - no stream here
+                if (_data[i] == 'e' && i + 6 <= _data.Length &&
+                    _data[i + 1] == 'n' && _data[i + 2] == 'd' &&
+                    _data[i + 3] == 'o' && _data[i + 4] == 'b' && _data[i + 5] == 'j')
+                {
+                    return -1;
+                }
+            }
+            return -1;
         }
 
         private PdfObject ReadCompressedObject(XrefEntry entry)
