@@ -249,7 +249,8 @@ namespace XfaPdfFiller
                 return obj;
             }
 
-            _tokenizer.Position = (int)entry.Offset;
+            int objOffset = (int)entry.Offset;
+            _tokenizer.Position = objOffset;
 
             // Parse: objNum gen obj <value> endobj
             var token = _tokenizer.NextToken(); // obj number
@@ -261,7 +262,10 @@ namespace XfaPdfFiller
             // Check if it's followed by a stream
             if (value is PdfDictionary dict)
             {
-                int streamStart = FindStreamKeyword(_tokenizer.Position);
+                // Search for "stream" keyword from the xref offset, scanning the full object.
+                // We use the xref offset as base because the tokenizer position after
+                // ParseObject can be unreliable for complex dictionaries.
+                int streamStart = FindStreamKeyword(objOffset);
                 if (streamStart >= 0)
                 {
                     _tokenizer.Position = streamStart;
@@ -276,14 +280,22 @@ namespace XfaPdfFiller
             return value;
         }
 
-        // Scan forward from current position to find "stream" keyword followed by EOL.
+        // Scan forward from a position to find "stream" keyword (not "endstream") followed by EOL.
         // Returns the position right after the EOL (start of stream data), or -1 if not found.
         private int FindStreamKeyword(int fromPos)
         {
-            // Only scan a limited range - "stream" should be very close after ">>"
-            int maxScan = Math.Min(fromPos + 32, _data.Length - 6);
+            // Scan up to 8KB - enough for even very large dictionaries
+            int maxScan = Math.Min(fromPos + 8192, _data.Length - 6);
             for (int i = fromPos; i < maxScan; i++)
             {
+                // Stop early if we hit "endobj" before finding "stream"
+                if (_data[i] == 'e' && i + 6 <= _data.Length &&
+                    _data[i + 1] == 'n' && _data[i + 2] == 'd' &&
+                    _data[i + 3] == 'o' && _data[i + 4] == 'b' && _data[i + 5] == 'j')
+                {
+                    return -1;
+                }
+
                 if (_data[i] == 's' && i + 6 <= _data.Length &&
                     _data[i + 1] == 't' && _data[i + 2] == 'r' &&
                     _data[i + 3] == 'e' && _data[i + 4] == 'a' && _data[i + 5] == 'm')
@@ -292,18 +304,18 @@ namespace XfaPdfFiller
                     if (i > 0 && _data[i - 1] == 'd')
                         continue;
 
-                    int pos = i + 6;
+                    // Verify next char is whitespace (CR, LF, or space) - per PDF spec
+                    int afterKeyword = i + 6;
+                    if (afterKeyword < _data.Length &&
+                        _data[afterKeyword] != '\r' && _data[afterKeyword] != '\n' &&
+                        _data[afterKeyword] != ' ')
+                        continue;
+
+                    int pos = afterKeyword;
                     // Skip EOL: CR, LF, or CRLF
                     if (pos < _data.Length && _data[pos] == '\r') pos++;
                     if (pos < _data.Length && _data[pos] == '\n') pos++;
                     return pos;
-                }
-                // Stop if we hit "endobj" - no stream here
-                if (_data[i] == 'e' && i + 6 <= _data.Length &&
-                    _data[i + 1] == 'n' && _data[i + 2] == 'd' &&
-                    _data[i + 3] == 'o' && _data[i + 4] == 'b' && _data[i + 5] == 'j')
-                {
-                    return -1;
                 }
             }
             return -1;
@@ -311,10 +323,24 @@ namespace XfaPdfFiller
 
         private PdfObject ReadCompressedObject(XrefEntry entry)
         {
-            // Read the object stream
+            // Guard: the object stream container must not itself be compressed
+            if (_xref.TryGetValue(entry.StreamObjectNumber, out var containerEntry) && containerEntry.IsCompressed)
+                throw new InvalidOperationException(
+                    $"Object stream container {entry.StreamObjectNumber} is itself compressed (circular reference)");
+
+            // Read the object stream container
             var streamObj = ReadObject(entry.StreamObjectNumber);
             if (streamObj is not PdfStream objStream)
-                throw new InvalidOperationException($"Object stream {entry.StreamObjectNumber} is not a stream");
+            {
+                // Provide diagnostic info
+                string actualType = streamObj?.GetType().Name ?? "null";
+                string hasXref = _xref.ContainsKey(entry.StreamObjectNumber) ? "yes" : "no";
+                long offset = _xref.ContainsKey(entry.StreamObjectNumber) ? _xref[entry.StreamObjectNumber].Offset : -1;
+                throw new InvalidOperationException(
+                    $"Object stream {entry.StreamObjectNumber} is {actualType} (not a stream). " +
+                    $"In xref: {hasXref}, offset: {offset}. " +
+                    $"Trying to read compressed object {entry.ObjectNumber}.");
+            }
 
             byte[] decompressed = DecompressStream(objStream.Dictionary, objStream.RawData);
 
