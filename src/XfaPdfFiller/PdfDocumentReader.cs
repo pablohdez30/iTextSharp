@@ -662,7 +662,152 @@ namespace XfaPdfFiller
                         throw new NotSupportedException($"PDF filter not supported: {f}");
                 }
             }
+
+            // Apply predictor de-filtering if specified in DecodeParms
+            result = ApplyPredictor(dict, result);
+
             return result;
+        }
+
+        private static byte[] ApplyPredictor(PdfDictionary dict, byte[] data)
+        {
+            var decodeParms = dict.Get("DecodeParms") as PdfDictionary;
+            if (decodeParms == null)
+            {
+                // DecodeParms might be in an array (one per filter)
+                var decodeParmsArray = dict.Get("DecodeParms") as PdfArray;
+                if (decodeParmsArray != null && decodeParmsArray.Items.Count > 0)
+                    decodeParms = decodeParmsArray.Items[0] as PdfDictionary;
+            }
+            if (decodeParms == null) return data;
+
+            var predictorObj = decodeParms.Get("Predictor") as PdfNumber;
+            int predictor = predictorObj?.IntValue ?? 1;
+
+            // Predictor 1 = no prediction, nothing to do
+            if (predictor == 1) return data;
+
+            var columnsObj = decodeParms.Get("Columns") as PdfNumber;
+            int columns = columnsObj?.IntValue ?? 1;
+
+            // TIFF Predictor 2
+            if (predictor == 2)
+            {
+                return ApplyTiffPredictor(data, columns);
+            }
+
+            // PNG Predictors (10-15)
+            if (predictor >= 10 && predictor <= 15)
+            {
+                return ApplyPngPredictor(data, columns);
+            }
+
+            return data;
+        }
+
+        private static byte[] ApplyPngPredictor(byte[] data, int columns)
+        {
+            // Each row: 1 filter byte + columns data bytes
+            int rowSize = columns + 1;
+            if (data.Length % rowSize != 0 && data.Length % (columns + 1) != 0)
+            {
+                // Try to auto-detect: some PDFs don't include the filter byte
+                // If data divides evenly by columns but not by columns+1, assume no filter bytes
+                if (data.Length % columns == 0)
+                    return data;
+            }
+
+            int numRows = data.Length / rowSize;
+            byte[] output = new byte[numRows * columns];
+            byte[] prevRow = new byte[columns];
+
+            for (int row = 0; row < numRows; row++)
+            {
+                int srcOffset = row * rowSize;
+                int dstOffset = row * columns;
+                byte filterType = data[srcOffset];
+
+                switch (filterType)
+                {
+                    case 0: // None
+                        Array.Copy(data, srcOffset + 1, output, dstOffset, columns);
+                        break;
+
+                    case 1: // Sub
+                        for (int j = 0; j < columns; j++)
+                        {
+                            byte left = (j > 0) ? output[dstOffset + j - 1] : (byte)0;
+                            output[dstOffset + j] = (byte)(data[srcOffset + 1 + j] + left);
+                        }
+                        break;
+
+                    case 2: // Up
+                        for (int j = 0; j < columns; j++)
+                        {
+                            output[dstOffset + j] = (byte)(data[srcOffset + 1 + j] + prevRow[j]);
+                        }
+                        break;
+
+                    case 3: // Average
+                        for (int j = 0; j < columns; j++)
+                        {
+                            byte left = (j > 0) ? output[dstOffset + j - 1] : (byte)0;
+                            int avg = ((int)left + (int)prevRow[j]) / 2;
+                            output[dstOffset + j] = (byte)(data[srcOffset + 1 + j] + avg);
+                        }
+                        break;
+
+                    case 4: // Paeth
+                        for (int j = 0; j < columns; j++)
+                        {
+                            byte left = (j > 0) ? output[dstOffset + j - 1] : (byte)0;
+                            byte up = prevRow[j];
+                            byte upLeft = (j > 0) ? prevRow[j - 1] : (byte)0;
+                            output[dstOffset + j] = (byte)(data[srcOffset + 1 + j] + PaethPredictor(left, up, upLeft));
+                        }
+                        break;
+
+                    default:
+                        // Unknown filter, just copy raw
+                        Array.Copy(data, srcOffset + 1, output, dstOffset, columns);
+                        break;
+                }
+
+                // Save current row as previous for next iteration
+                Array.Copy(output, dstOffset, prevRow, 0, columns);
+            }
+
+            return output;
+        }
+
+        private static byte PaethPredictor(byte a, byte b, byte c)
+        {
+            int p = (int)a + (int)b - (int)c;
+            int pa = Math.Abs(p - a);
+            int pb = Math.Abs(p - b);
+            int pc = Math.Abs(p - c);
+            if (pa <= pb && pa <= pc) return a;
+            if (pb <= pc) return b;
+            return c;
+        }
+
+        private static byte[] ApplyTiffPredictor(byte[] data, int columns)
+        {
+            // TIFF Predictor 2: each byte is delta from the previous in the same row
+            if (columns <= 0) return data;
+            int numRows = data.Length / columns;
+            byte[] output = new byte[data.Length];
+
+            for (int row = 0; row < numRows; row++)
+            {
+                int offset = row * columns;
+                output[offset] = data[offset];
+                for (int j = 1; j < columns; j++)
+                {
+                    output[offset + j] = (byte)(data[offset + j] + output[offset + j - 1]);
+                }
+            }
+            return output;
         }
 
         private static byte[] FlateDecompress(byte[] data)
