@@ -905,13 +905,14 @@ namespace XfaPdfFiller
         }
 
         // Navigate to get the XFA object following the path: Catalog → AcroForm → XFA
-        public (PdfObject? xfaObj, PdfDictionary? acroForm, int acroFormObjNum) GetXfaObject()
+        public (PdfObject? xfaObj, PdfDictionary? acroForm, int acroFormObjNum, PdfDictionary? catalog, int catalogObjNum) GetXfaObject()
         {
             // Get catalog
             var rootRef = _trailer?.Get("Root") as PdfReference;
             if (rootRef == null)
                 throw new InvalidOperationException("No Root in trailer");
 
+            int catalogObjNum = rootRef.ObjectNumber;
             var catalog = ReadObject(rootRef.ObjectNumber);
             if (catalog is PdfStream catStream)
                 catalog = catStream.Dictionary;
@@ -947,7 +948,7 @@ namespace XfaPdfFiller
             if (xfa == null)
                 throw new InvalidOperationException("No XFA entry in AcroForm - this is not an XFA form");
 
-            return (xfa, acroFormDict, acroFormObjNum);
+            return (xfa, acroFormDict, acroFormObjNum, catalogDict, catalogObjNum);
         }
 
         // Get decompressed stream bytes

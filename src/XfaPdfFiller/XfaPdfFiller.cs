@@ -37,7 +37,7 @@ namespace XfaPdfFiller
         {
             // 1. Parse the PDF and locate the XFA structure
             var reader = new PdfDocumentReader(pdfData);
-            var (xfaObj, acroFormDict, acroFormObjNum) = reader.GetXfaObject();
+            var (xfaObj, acroFormDict, acroFormObjNum, catalogDict, catalogObjNum) = reader.GetXfaObject();
 
             if (xfaObj == null)
                 throw new InvalidOperationException("No XFA data found in this PDF.");
@@ -57,8 +57,18 @@ namespace XfaPdfFiller
             XmlNode datasetsNode = FindOrCreateDatasetsNode(xfaDoc);
             InjectDataIntoDatasets(xfaDoc, datasetsNode, inputNode);
 
-            // 5. Write the modified PDF with incremental update
-            return WriteModifiedPdf(reader, xfa, xfaDoc, acroFormDict!, acroFormObjNum);
+            // 5. Remove /Perms from Catalog if present (usage rights signature
+            //    becomes invalid after modification, same as iTextSharp does)
+            bool catalogModified = false;
+            if (catalogDict != null && catalogDict.Entries.ContainsKey("Perms"))
+            {
+                catalogDict.Entries.Remove("Perms");
+                catalogModified = true;
+            }
+
+            // 6. Write the modified PDF with incremental update
+            return WriteModifiedPdf(reader, xfa, xfaDoc, acroFormDict!, acroFormObjNum,
+                                    catalogModified ? catalogDict : null, catalogObjNum);
         }
 
         /// <summary>
@@ -278,7 +288,9 @@ namespace XfaPdfFiller
             XfaStructure xfa,
             XmlDocument modifiedDoc,
             PdfDictionary acroFormDict,
-            int acroFormObjNum)
+            int acroFormObjNum,
+            PdfDictionary? modifiedCatalog,
+            int catalogObjNum)
         {
             using (var output = new MemoryStream())
             {
@@ -286,8 +298,7 @@ namespace XfaPdfFiller
 
                 if (xfa.IsArray && xfa.OriginalArray != null)
                 {
-                    // For array-based XFA, we need to replace the "datasets" stream
-                    // and optionally the "template" stream
+                    // For array-based XFA, replace the "datasets" stream
                     var newArray = new PdfArray();
                     for (int i = 0; i < xfa.OriginalArray.Items.Count; i += 2)
                     {
@@ -302,7 +313,6 @@ namespace XfaPdfFiller
 
                         if (packetName == "datasets")
                         {
-                            // Serialize the modified datasets node
                             XmlNode? datasetsNode = FindNodeByLocalName(modifiedDoc.DocumentElement!, "datasets");
                             byte[] xmlBytes = SerializeXmlNode(datasetsNode ?? modifiedDoc.DocumentElement!);
                             byte[] compressed = PdfDocumentReader.FlateCompress(xmlBytes);
@@ -317,12 +327,10 @@ namespace XfaPdfFiller
                         }
                         else if (i + 1 < xfa.OriginalArray.Items.Count)
                         {
-                            // Keep original reference
                             newArray.Items.Add(xfa.OriginalArray.Items[i + 1]);
                         }
                     }
 
-                    // Update AcroForm to point to new XFA array
                     acroFormDict.Entries["XFA"] = newArray;
 
                     if (acroFormObjNum >= 0)
@@ -332,14 +340,11 @@ namespace XfaPdfFiller
                     }
                     else
                     {
-                        // AcroForm was inline in catalog - need to write it as new object
-                        // and update the catalog reference
                         writer.WriteNewObject(acroFormDict);
                     }
                 }
                 else
                 {
-                    // Single stream XFA - replace entire XFA stream
                     byte[] xmlBytes = SerializeXmlNode(modifiedDoc);
                     byte[] compressed = PdfDocumentReader.FlateCompress(xmlBytes);
 
@@ -356,6 +361,13 @@ namespace XfaPdfFiller
                         var entry = reader.Xref.ContainsKey(acroFormObjNum) ? reader.Xref[acroFormObjNum] : default;
                         writer.WriteReplacementObject(acroFormObjNum, entry.Generation, acroFormDict);
                     }
+                }
+
+                // Write updated Catalog if modified (e.g., /Perms removed)
+                if (modifiedCatalog != null && catalogObjNum >= 0)
+                {
+                    var entry = reader.Xref.ContainsKey(catalogObjNum) ? reader.Xref[catalogObjNum] : default;
+                    writer.WriteReplacementObject(catalogObjNum, entry.Generation, modifiedCatalog);
                 }
 
                 return writer.Finish();

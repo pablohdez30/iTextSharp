@@ -302,7 +302,7 @@ namespace XfaPdfFiller.Tests
         {
             // Use our own reader to extract the XFA datasets
             var reader = new PdfDocumentReader(pdfData);
-            var (xfaObj, _, _) = reader.GetXfaObject();
+            var (xfaObj, _, _, _, _) = reader.GetXfaObject();
 
             xfaObj = reader.ResolveReference(xfaObj!);
 
@@ -334,7 +334,7 @@ namespace XfaPdfFiller.Tests
         private static string ExtractAllXfaXml(byte[] pdfData)
         {
             var reader = new PdfDocumentReader(pdfData);
-            var (xfaObj, _, _) = reader.GetXfaObject();
+            var (xfaObj, _, _, _, _) = reader.GetXfaObject();
 
             xfaObj = reader.ResolveReference(xfaObj!);
 
