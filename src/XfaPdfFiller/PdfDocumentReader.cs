@@ -240,7 +240,20 @@ namespace XfaPdfFiller
                 return cached;
 
             if (!_xref.TryGetValue(objNum, out var entry) || !entry.InUse)
-                return PdfNull.Instance;
+            {
+                // Fallback: scan the PDF for "objNum 0 obj" if not found in xref.
+                // This handles PDFs with incomplete/corrupt xref tables.
+                int foundOffset = ScanForObject(objNum);
+                if (foundOffset >= 0)
+                {
+                    entry = new XrefEntry { ObjectNumber = objNum, Offset = foundOffset, Generation = 0, InUse = true };
+                    _xref[objNum] = entry;
+                }
+                else
+                {
+                    return PdfNull.Instance;
+                }
+            }
 
             if (entry.IsCompressed)
             {
@@ -316,6 +329,32 @@ namespace XfaPdfFiller
                     if (pos < _data.Length && _data[pos] == '\r') pos++;
                     if (pos < _data.Length && _data[pos] == '\n') pos++;
                     return pos;
+                }
+            }
+            return -1;
+        }
+
+        // Fallback: scan the entire PDF for "objNum 0 obj" pattern.
+        // Used when an object is referenced but not found in any xref table/stream.
+        private int ScanForObject(int objNum)
+        {
+            byte[] pattern = Encoding.ASCII.GetBytes($"{objNum} 0 obj");
+            for (int i = 0; i < _data.Length - pattern.Length; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < pattern.Length; j++)
+                {
+                    if (_data[i + j] != pattern[j])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match)
+                {
+                    // Verify it's at a line boundary (preceded by whitespace or start of file)
+                    if (i == 0 || PdfTokenizer.IsWhitespace(_data[i - 1]))
+                        return i;
                 }
             }
             return -1;
