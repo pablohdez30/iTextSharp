@@ -81,7 +81,7 @@ namespace XfaPdfFiller
             }
         }
 
-        public override bool Equals(object? obj) => obj is PdfName other && Name == other.Name;
+        public override bool Equals(object obj) => obj is PdfName other && Name == other.Name;
         public override int GetHashCode() => Name.GetHashCode();
     }
 
@@ -166,8 +166,11 @@ namespace XfaPdfFiller
     {
         public Dictionary<string, PdfObject> Entries { get; } = new Dictionary<string, PdfObject>();
 
-        public PdfObject? Get(string name) =>
-            Entries.TryGetValue(name, out var val) ? val : null;
+        public PdfObject Get(string name)
+        {
+            PdfObject val;
+            return Entries.TryGetValue(name, out val) ? val : null;
+        }
 
         public override void WriteTo(PdfSerializationContext ctx)
         {
@@ -199,7 +202,7 @@ namespace XfaPdfFiller
             ctx.Write($"{ObjectNumber} {Generation} R");
         }
 
-        public override bool Equals(object? obj) =>
+        public override bool Equals(object obj) =>
             obj is PdfReference other && ObjectNumber == other.ObjectNumber && Generation == other.Generation;
 
         public override int GetHashCode() => ObjectNumber * 397 ^ Generation;

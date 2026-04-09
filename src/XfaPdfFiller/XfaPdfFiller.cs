@@ -47,7 +47,7 @@ namespace XfaPdfFiller
             inputXml.PreserveWhitespace = true;
             xmlStream.Position = 0;
             inputXml.Load(xmlStream);
-            XmlNode inputNode = inputXml.DocumentElement!;
+            XmlNode inputNode = inputXml.DocumentElement;
 
             // 3. Read existing XFA XML and determine structure
             XfaStructure xfa = ReadXfaStructure(reader, xfaObj);
@@ -62,7 +62,7 @@ namespace XfaPdfFiller
             //    (usage rights signature) remain valid in append/incremental mode
             //    because the UR signature covers the original revision. This preserves
             //    save rights in Adobe Reader, matching iTextSharp's behavior.
-            return WriteModifiedPdf(reader, xfa, xfaDoc, acroFormDict!, acroFormObjNum,
+            return WriteModifiedPdf(reader, xfa, xfaDoc, acroFormDict, acroFormObjNum,
                                     null, catalogObjNum);
         }
 
@@ -89,7 +89,7 @@ namespace XfaPdfFiller
         {
             public XmlDocument FullDocument { get; set; } = new XmlDocument();
             public bool IsArray { get; set; }
-            public PdfArray? OriginalArray { get; set; }
+            public PdfArray OriginalArray { get; set; }
 
             // For array-based XFA: maps packet names to their object references
             public Dictionary<string, int> PacketObjectNumbers { get; } = new Dictionary<string, int>();
@@ -187,20 +187,20 @@ namespace XfaPdfFiller
             // It can be at different levels depending on the XFA structure
             var nodes = doc.GetElementsByTagName("datasets", XfaDataNamespace);
             if (nodes.Count > 0)
-                return nodes[0]!;
+                return nodes[0];
 
             // Also try without namespace
             nodes = doc.GetElementsByTagName("xfa:datasets");
             if (nodes.Count > 0)
-                return nodes[0]!;
+                return nodes[0];
 
             // Try local name search through all elements
-            XmlNode? datasets = FindNodeByLocalName(doc.DocumentElement!, "datasets");
+            XmlNode datasets = FindNodeByLocalName(doc.DocumentElement, "datasets");
             if (datasets != null)
                 return datasets;
 
             // Create a new datasets node
-            XmlNode? root = doc.DocumentElement;
+            XmlNode root = doc.DocumentElement;
             if (root == null)
                 throw new InvalidOperationException("XFA document has no root element");
 
@@ -210,7 +210,7 @@ namespace XfaPdfFiller
             return datasetsElement;
         }
 
-        private static XmlNode? FindNodeByLocalName(XmlNode parent, string localName)
+        private static XmlNode FindNodeByLocalName(XmlNode parent, string localName)
         {
             if (parent.LocalName == localName)
                 return parent;
@@ -236,7 +236,7 @@ namespace XfaPdfFiller
             // 2. If it exists, replace its first element child with the input
             // 3. If it doesn't exist, create it and append the input
 
-            XmlNode? dataNode = null;
+            XmlNode dataNode = null;
             foreach (XmlNode child in datasetsNode.ChildNodes)
             {
                 if (child.NodeType == XmlNodeType.Element &&
@@ -258,7 +258,7 @@ namespace XfaPdfFiller
             XmlNode importedNode = doc.ImportNode(inputNode, true);
 
             // Find first element child of data node
-            XmlNode? firstElement = null;
+            XmlNode firstElement = null;
             foreach (XmlNode child in dataNode.ChildNodes)
             {
                 if (child.NodeType == XmlNodeType.Element)
@@ -284,7 +284,7 @@ namespace XfaPdfFiller
             XmlDocument modifiedDoc,
             PdfDictionary acroFormDict,
             int acroFormObjNum,
-            PdfDictionary? modifiedCatalog,
+            PdfDictionary modifiedCatalog,
             int catalogObjNum)
         {
             using (var output = new MemoryStream())
@@ -308,8 +308,8 @@ namespace XfaPdfFiller
 
                         if (packetName == "datasets")
                         {
-                            XmlNode? datasetsNode = FindNodeByLocalName(modifiedDoc.DocumentElement!, "datasets");
-                            byte[] xmlBytes = SerializeXmlNode(datasetsNode ?? modifiedDoc.DocumentElement!);
+                            XmlNode datasetsNode = FindNodeByLocalName(modifiedDoc.DocumentElement, "datasets");
+                            byte[] xmlBytes = SerializeXmlNode(datasetsNode != null ? datasetsNode : modifiedDoc.DocumentElement);
                             byte[] compressed = PdfDocumentReader.FlateCompress(xmlBytes);
 
                             var streamDict = new PdfDictionary();

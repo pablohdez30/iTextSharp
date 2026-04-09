@@ -11,7 +11,7 @@ namespace XfaPdfFiller
         private readonly byte[] _data;
         private readonly PdfTokenizer _tokenizer;
         private readonly Dictionary<int, XrefEntry> _xref = new Dictionary<int, XrefEntry>();
-        private PdfDictionary? _trailer;
+        private PdfDictionary _trailer;
         private readonly Dictionary<int, PdfObject> _objectCache = new Dictionary<int, PdfObject>();
 
         public PdfDocumentReader(byte[] data)
@@ -133,7 +133,8 @@ namespace XfaPdfFiller
             _tokenizer.NextToken(); // "obj"
 
             var dictObj = ParseObject();
-            if (dictObj is not PdfDictionary dict)
+            var dict = dictObj as PdfDictionary;
+            if (dict == null)
                 throw new InvalidOperationException("Expected dictionary for xref stream");
 
             // Find stream data using robust byte scanning
@@ -369,10 +370,11 @@ namespace XfaPdfFiller
 
             // Read the object stream container
             var streamObj = ReadObject(entry.StreamObjectNumber);
-            if (streamObj is not PdfStream objStream)
+            var objStream = streamObj as PdfStream;
+            if (objStream == null)
             {
                 // Provide diagnostic info
-                string actualType = streamObj?.GetType().Name ?? "null";
+                string actualType = streamObj != null ? streamObj.GetType().Name : "null";
                 string hasXref = _xref.ContainsKey(entry.StreamObjectNumber) ? "yes" : "no";
                 long offset = _xref.ContainsKey(entry.StreamObjectNumber) ? _xref[entry.StreamObjectNumber].Offset : -1;
                 throw new InvalidOperationException(
@@ -835,7 +837,7 @@ namespace XfaPdfFiller
 
             // Try with calculated offset first, then without, then with offset 0
             int[] offsets = offset > 0 ? new[] { offset, 0 } : new[] { 0, 2 };
-            Exception? lastEx = null;
+            Exception lastEx = null;
 
             foreach (int off in offsets)
             {
@@ -923,10 +925,10 @@ namespace XfaPdfFiller
         }
 
         // Navigate to get the XFA object following the path: Catalog → AcroForm → XFA
-        public (PdfObject? xfaObj, PdfDictionary? acroForm, int acroFormObjNum, PdfDictionary? catalog, int catalogObjNum) GetXfaObject()
+        public (PdfObject xfaObj, PdfDictionary acroForm, int acroFormObjNum, PdfDictionary catalog, int catalogObjNum) GetXfaObject()
         {
             // Get catalog
-            var rootRef = _trailer?.Get("Root") as PdfReference;
+            var rootRef = _trailer != null ? _trailer.Get("Root") as PdfReference : null;
             if (rootRef == null)
                 throw new InvalidOperationException("No Root in trailer");
 
@@ -944,7 +946,7 @@ namespace XfaPdfFiller
                 throw new InvalidOperationException("No AcroForm in catalog - this PDF has no form");
 
             int acroFormObjNum = -1;
-            PdfDictionary? acroFormDict;
+            PdfDictionary acroFormDict;
             if (acroFormRef is PdfReference afRef)
             {
                 acroFormObjNum = afRef.ObjectNumber;
@@ -979,7 +981,7 @@ namespace XfaPdfFiller
         {
             get
             {
-                var size = _trailer?.Get("Size") as PdfNumber;
+                var size = _trailer != null ? _trailer.Get("Size") as PdfNumber : null;
                 return size?.IntValue ?? (_xref.Count > 0 ? MaxObjectNumber + 1 : 1);
             }
         }
