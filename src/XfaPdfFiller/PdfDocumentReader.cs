@@ -1,3 +1,17 @@
+// ============================================================================
+//  XfaPdfFiller - Biblioteca para rellenar formularios XFA en documentos PDF
+//  Reemplazo de iTextSharp sin dependencias externas
+// ----------------------------------------------------------------------------
+//  09/04/2026 PHP:
+//  - Permite inyectar datos XML en formularios PDF con estructura XFA,
+//    parseando y reescribiendo el binario PDF mediante actualizacion incremental.
+//  - Este fichero implementa el lector de documentos PDF. Parsea las tablas de
+//    referencias cruzadas (xref tradicional y xref streams), resuelve objetos
+//    indirectos y comprimidos, descomprime streams FlateDecode con soporte de
+//    predictores PNG/TIFF, y localiza la estructura XFA dentro del catalogo
+//    del PDF (Catalog -> AcroForm -> XFA).
+// ============================================================================
+
 using System;
 using System.Collections.Generic;
 using System.IO;
