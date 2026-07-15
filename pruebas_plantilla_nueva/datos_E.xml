@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FormularioAnejo1Entidad><DatosEstaticos><DatosDeclarante><codigoEntidad>1234</codigoEntidad><Trimestre>2026T2</Trimestre><CorreoElectronico>test@gmail.com</CorreoElectronico></DatosDeclarante></DatosEstaticos><ConceptoA><ConceptoA1>
+<ConceptoA11><DatosConceptoA11><tipoInteresAnualModal>3,50</tipoInteresAnualModal><comisionApertura>0,00</comisionApertura><TAE>3,55</TAE><costeRegistroHipoteca>0,00</costeRegistroHipoteca><compensacionDesistimiento>0,00</compensacionDesistimiento></DatosConceptoA11><Observaciones><observacionesComun><Seguro>1</Seguro></observacionesComun></Observaciones></ConceptoA11>
+<ConceptoA12><DatosConceptoA12><diferencialEuribor>0,81</diferencialEuribor><comisionApertura>0,00</comisionApertura><TAE>2,58</TAE><costeRegistroHipoteca>0,00</costeRegistroHipoteca><compensacionDesistimiento>0,00</compensacionDesistimiento></DatosConceptoA12><Observaciones><observacionesComun><Seguro>1</Seguro></observacionesComun></Observaciones></ConceptoA12>
+</ConceptoA1><ConceptoA2>
+<ConceptoA21><DatosConceptoA2X><tipoInteresAnualModal>5,95</tipoInteresAnualModal><comisionApertura>0,00</comisionApertura><TAE>6,55</TAE></DatosConceptoA2X><Observaciones><observacionesComun><Domiciliacion>1</Domiciliacion></observacionesComun></Observaciones></ConceptoA21>
+<ConceptoA22><DatosConceptoA2X><tipoInteresAnualModal>4,49</tipoInteresAnualModal><comisionApertura>0,00</comisionApertura><TAE>4,58</TAE></DatosConceptoA2X><Observaciones><observacionesComun><Domiciliacion>1</Domiciliacion></observacionesComun></Observaciones></ConceptoA22>
+<ConceptoA23><DatosConceptoA2X><tipoInteresAnualModal>9,50</tipoInteresAnualModal><comisionApertura>1,00</comisionApertura><TAE>9,91</TAE></DatosConceptoA2X></ConceptoA23>
+<ConceptoA24><DatosConceptoA2X><tipoInteresAnualModal>6,50</tipoInteresAnualModal><comisionApertura>0,00</comisionApertura><TAE>6,69</TAE></DatosConceptoA2X><Observaciones><observacionesComun><Domiciliacion>1</Domiciliacion></observacionesComun></Observaciones></ConceptoA24>
+<ConceptoA25><DatosConceptoA2X><tipoInteresAnualModal>0,00</tipoInteresAnualModal><comisionApertura>0,00</comisionApertura><TAE>0,00</TAE><comisionAnualRenovacion>0,00</comisionAnualRenovacion><recargoExcedidos>0,00</recargoExcedidos></DatosConceptoA2X></ConceptoA25>
+<ConceptoA26><DatosConceptoA2X><tipoInteresAnualModal>0,00</tipoInteresAnualModal><comisionAperturaEuros>0,00</comisionAperturaEuros><comisionAperturaPorcentaje>0,00</comisionAperturaPorcentaje><TAE>0,00</TAE><comisionAnualRenovacion>0,00</comisionAnualRenovacion><comisionDisposicionCrediticia>0,00</comisionDisposicionCrediticia><recargoExcedidos>0,00</recargoExcedidos></DatosConceptoA2X></ConceptoA26>
+</ConceptoA2></ConceptoA><ConceptoB><ConceptoB1>
+<DatosConceptoB11><tipoInteresAnualModal>0,00</tipoInteresAnualModal><TAE>0,00</TAE><comisionCancelacion>0,00</comisionCancelacion></DatosConceptoB11>
+<DatosConceptoB12><tipoInteresAnualModal>1,50</tipoInteresAnualModal><TAE>1,50</TAE><comisionCancelacion>0,00</comisionCancelacion></DatosConceptoB12>
+<DatosConceptoB13><plazoMeses>15</plazoMeses><tipoInteresAnualModal>2,78</tipoInteresAnualModal><TAE>2,81</TAE><comisionCancelacion>0,14</comisionCancelacion></DatosConceptoB13>
+<DatosConceptoB14><plazoMeses>0</plazoMeses><tipoInteresAnualModal>0,00</tipoInteresAnualModal><TAE>0,00</TAE></DatosConceptoB14>
+</ConceptoB1>
+<ConceptoB2><plazoMeses>12</plazoMeses><tipoInteresAnualModal>1,50</tipoInteresAnualModal><TAE>1,50</TAE><comisionCancelacion>0,02</comisionCancelacion></ConceptoB2>
+</ConceptoB><ConceptoC>
+<ConceptoC1><primaTerminosAnuales>0,00</primaTerminosAnuales><limitePrevisto>0,00</limitePrevisto></ConceptoC1>
+<ConceptoC5><importeDevengado>0,81</importeDevengado></ConceptoC5>
+</ConceptoC><FormLanguages><xmlLanguages /><LanguageDropDown><lang><text /><value /></lang></LanguageDropDown></FormLanguages><FormDebug><debug>0</debug><debugLevel>ERROR</debugLevel></FormDebug><templateFields><templateName>Anejo1Trimestral</templateName><templateVersion>10</templateVersion><templateRevision>3</templateRevision><templateApplication>CSF</templateApplication><templateSubApplication /><templateEncoding>UTF-8</templateEncoding><componentsVersion>5.0.0</componentsVersion><validated>1</validated><outputForm>0</outputForm><signedForm>0</signedForm><environment>PROD</environment><userAgent /><templateCode>CSF-004-010.03-CAS-1</templateCode></templateFields></FormularioAnejo1Entidad>
