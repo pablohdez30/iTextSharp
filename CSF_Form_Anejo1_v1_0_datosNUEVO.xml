@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FormularioAnejo1Entidad>
+  <DatosEstaticos>
+    <DatosDeclarante>
+      <codigoEntidad>@ENTIDAD@</codigoEntidad>
+      <Trimestre>@TRIMESTRE@</Trimestre>
+      <CorreoElectronico>@CORREO@</CorreoElectronico>
+    </DatosDeclarante>
+  </DatosEstaticos>
+  <ConceptoA>
+    <ConceptoA1>
+@CONCEPTOA11@
+@CONCEPTOA12@
+</ConceptoA1>
+    <ConceptoA2>
+@CONCEPTOA21@
+@CONCEPTOA22@
+@CONCEPTOA23@
+@CONCEPTOA24@
+@CONCEPTOA25@
+@CONCEPTOA26@
+</ConceptoA2>
+  </ConceptoA>
+  <ConceptoB><ConceptoB1>
+@CONCEPTOB11@
+@CONCEPTOB12@
+@CONCEPTOB13@
+@CONCEPTOB14@
+</ConceptoB1>
+@CONCEPTOB2@
+</ConceptoB>
+  <ConceptoC>
+@CONCEPTOC1@
+@CONCEPTOC5@
+</ConceptoC>
+  <FormLanguages>
+    <xmlLanguages/>
+    <LanguageDropDown>
+      <lang>
+        <text/>
+        <value/>
+      </lang>
+    </LanguageDropDown>
+  </FormLanguages>
+  <FormDebug>
+    <debug>0</debug>
+    <debugLevel>ERROR</debugLevel>
+  </FormDebug>
+  <templateFields>
+<templateName>Anejo1Trimestral</templateName>
+<templateVersion>10</templateVersion>
+<templateRevision>3</templateRevision>
+<templateApplication>CSF</templateApplication>
+<templateSubApplication/>
+<templateEncoding>UTF-8</templateEncoding>
+<componentsVersion>5.0.0</componentsVersion>
+<validated>1</validated>
+<outputForm>0</outputForm>
+<signedForm>0</signedForm>
+<environment>PROD</environment>
+<userAgent/>
+<templateCode>CSF-004-010.03-CAS-1</templateCode>
+</templateFields>
+</FormularioAnejo1Entidad>
